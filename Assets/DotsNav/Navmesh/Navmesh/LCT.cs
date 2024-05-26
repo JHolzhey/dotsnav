@@ -69,6 +69,7 @@ namespace DotsNav.Navmesh
             }
         }
 
+        // Will return 0 if edge is constrained
         internal static float GetLocalClearance(double2 a, double2 b, double2 c, Edge* edge)
         {
             var lba = math.lengthsq(a - b);
@@ -157,7 +158,7 @@ namespace DotsNav.Navmesh
 
         bool ValidateRefinement(ref float2 pRef, Edge* c)
         {
-            if (SplitIsRobust(pRef, c) && _qt.FindClosest(pRef, _e * _e) == null)
+            if (SplitIsRobust(pRef, c) && _qt.FindClosest(pRef, Vertex.Type.Major, _e * _e) == null)
                 return true;
 
             var fractions = stackalloc float[] {.5f, .25f, .75f, .375f, .625f};
@@ -166,7 +167,7 @@ namespace DotsNav.Navmesh
             for (int i = 0; i < 5; i++)
             {
                 pRef = c->Org->Point + fractions[i] * od;
-                if (SplitIsRobust(pRef, c) && _qt.FindClosest(pRef, _e * _e) == null)
+                if (SplitIsRobust(pRef, c) && _qt.FindClosest(pRef, Vertex.Type.Major, _e * _e) == null)
                     return true;
             }
 
@@ -392,7 +393,7 @@ namespace DotsNav.Navmesh
             {
                 InfiniteLoopDetection.Register(1000, "LocalRefinement");
                 var v = (Vertex*) _refinementQueue.PopFront();
-                var e = v->GetEdgeEnumerator();
+                var e = v->GetEdgeEnumerator(true);
                 while (e.MoveNext())
                 {
                     if (TriDisturbed(e.Current, out var vRef) || TravsDisturbed(e.Current, out vRef))
@@ -451,7 +452,7 @@ namespace DotsNav.Navmesh
                 var c = edge->Dest->Point;
                 if (CheckTraversal(a, b, c, edge, true, out var disturbance))
                 {
-                    vRef = InsertPointInEdge(disturbance.PRef, disturbance.Edge);
+                    vRef = InsertPointInEdge(disturbance.PRef, disturbance.Edge, ConstraintType.Obstacle);
                     return true;
                 }
             }
@@ -471,7 +472,7 @@ namespace DotsNav.Navmesh
                 var c = edge->Dest->Point;
                 if (CheckTraversal(a, b, c, edge, false, out var disturbance))
                 {
-                    vRef = InsertPointInEdge(disturbance.PRef, disturbance.Edge);
+                    vRef = InsertPointInEdge(disturbance.PRef, disturbance.Edge, ConstraintType.Obstacle);
                     return true;
                 }
             }

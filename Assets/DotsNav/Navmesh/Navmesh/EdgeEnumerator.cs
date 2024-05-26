@@ -12,6 +12,7 @@ namespace DotsNav.Navmesh
         {
             UnsafeList<IntPtr> _vertices;
             readonly bool _sym;
+            readonly bool _isMajor;
 
             int _vertex;
             bool _started;
@@ -24,10 +25,11 @@ namespace DotsNav.Navmesh
 
             readonly float2 _max;
 
-            internal EdgeEnumerator(UnsafeList<IntPtr> vertices, float2 max, bool sym) : this()
+            internal EdgeEnumerator(UnsafeList<IntPtr> vertices, float2 max, bool sym, bool isMajor) : this()
             {
                 _vertices = vertices;
                 _sym = sym;
+                _isMajor = isMajor;
                 _max = max;
             }
 
@@ -41,7 +43,7 @@ namespace DotsNav.Navmesh
                     if (_vertices.Length == 0)
                         return false;
 
-                    _enumerator = ((Vertex*) _vertices[_vertex++])->GetEdgeEnumerator();
+                    _enumerator = ((Vertex*) _vertices[_vertex++])->GetEdgeEnumerator(_isMajor);
                     _started = true;
                 }
 
@@ -52,7 +54,7 @@ namespace DotsNav.Navmesh
                         if (_vertex == _vertices.Length)
                             return false;
 
-                        _enumerator = ((Vertex*) _vertices[_vertex++])->GetEdgeEnumerator();
+                        _enumerator = ((Vertex*) _vertices[_vertex++])->GetEdgeEnumerator(_isMajor);
                     }
 
 

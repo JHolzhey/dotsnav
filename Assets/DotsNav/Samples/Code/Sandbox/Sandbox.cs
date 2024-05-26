@@ -122,7 +122,7 @@ namespace DotsNav.Samples.Code
 
                 if (points.Count == 0)
                     continue;
-                var obstacleReference = Plane.InsertObstacle(points);
+                var obstacleReference = Plane.InsertObstacle(points, Input.GetKey(KeyCode.LeftCommand) ? ConstraintType.Terrain : ConstraintType.Obstacle);
                 _obstacles.Add(obstacleReference);
             }
             _points.Clear();
@@ -306,6 +306,9 @@ namespace DotsNav.Samples.Code
                         if ((Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) && _points[0].Count > 2)
                             _points[0].Add(_points[0][0]);
                         Insert();
+                    } else if (_points[0].Count == 1) {
+                        _points[0].Add(_points[0][0]);
+                        Insert();
                     }
                 }
 
@@ -351,9 +354,9 @@ namespace DotsNav.Samples.Code
 
             foreach (var points in _points)
                 for (int i = 1; i < points.Count; i++)
-                    _lineDrawer.DrawLine(points[i - 1], points[i], Color.cyan);
+                    _lineDrawer.DrawLine(points[i - 1], points[i], Color.white);
             if (_placingPrefab == -1 && _points[0].Count > 0)
-                _lineDrawer.DrawLine(_points[0][_points[0].Count - 1], mousePos, Color.cyan);
+                _lineDrawer.DrawLine(_points[0][_points[0].Count - 1], mousePos, Color.white);
         }
     }
 }

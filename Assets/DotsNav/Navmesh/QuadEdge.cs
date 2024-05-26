@@ -1,6 +1,8 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
+using Unity.Mathematics;
 
 namespace DotsNav.Navmesh
 {
@@ -20,5 +22,16 @@ namespace DotsNav.Navmesh
         public int Mark;
         public int Id;
         public bool RefineFailed;
+
+        unsafe QuadEdge* _majorEdge;
+        public unsafe QuadEdge* MajorEdge {
+            get {
+                UnityEngine.Debug.Assert(MathLib.IfFirstCheckSecond(_majorEdge != null, EdgeType == EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle));
+                return _majorEdge;
+            }
+            set { UnityEngine.Debug.Assert(value->EdgeType == EdgeType.ConnectsToObstacleWithMinorTerrainConnects); _majorEdge = value; }
+        }
+
+        public EdgeType EdgeType;
     }
 }

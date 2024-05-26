@@ -56,7 +56,7 @@ namespace DotsNav.Navmesh
 
                 closed.TryAdd((IntPtr) step.Vertex);
 
-                var e = step.Vertex->Edge;
+                var e = step.Vertex->GetEdge(true); // TODO: True
                 var ii = 0;
                 do
                 {
@@ -78,7 +78,7 @@ namespace DotsNav.Navmesh
                     }
 
                     e = e->ONext;
-                } while (e != step.Vertex->Edge);
+                } while (e != step.Vertex->GetEdge(true)); // TODO: True
             }
 
             return false;

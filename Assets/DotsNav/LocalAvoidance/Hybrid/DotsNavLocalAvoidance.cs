@@ -13,7 +13,7 @@ namespace DotsNav.LocalAvoidance.Hybrid
     {
         public bool DrawObstacleTree;
         
-        void IPlaneComponent.InsertObstacle(EntityManager entityManager, Entity plane, Entity obstacle)
+        void IPlaneComponent.InsertObstacle(EntityManager entityManager, Entity plane, Entity obstacle, ConstraintType constraintType)
         {
             entityManager.AddComponentData(obstacle, new ObstacleTreeElementComponent {Tree = plane});
         }

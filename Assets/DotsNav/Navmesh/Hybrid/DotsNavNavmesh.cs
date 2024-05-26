@@ -43,9 +43,9 @@ namespace DotsNav.Navmesh.Hybrid
 
         public bool IsInitialized => Vertices > 7;
 
-        void IPlaneComponent.InsertObstacle(EntityManager em, Entity plane, Entity obstacle)
+        void IPlaneComponent.InsertObstacle(EntityManager em, Entity plane, Entity obstacle, ConstraintType constraintType)
         {
-            em.AddComponentData(obstacle, new NavmeshObstacleComponent());
+            em.AddComponentData(obstacle, new NavmeshObstacleComponent(constraintType));
         }
 
         /// <summary>

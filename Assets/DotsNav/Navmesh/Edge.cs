@@ -11,14 +11,14 @@ namespace DotsNav.Navmesh
     {
         internal readonly QuadEdge* QuadEdge;
         internal Edge* Next;
-        readonly int _num;
+        readonly int _quadIndex;
         float _clearanceLeft;
         float _clearanceRight;
 
-        internal Edge(QuadEdge* quadEdge, int num) : this()
+        internal Edge(QuadEdge* quadEdge, int quadIndex) : this()
         {
             QuadEdge = quadEdge;
-            _num = num;
+            _quadIndex = quadIndex;
             _clearanceLeft = -1;
             _clearanceRight = -1;
         }
@@ -77,7 +77,7 @@ namespace DotsNav.Navmesh
         /// True for one of a quadedge's two directed edges, i.e. true for either edge(x,y) or edge(y,x).
         /// This value is not stable and can change when updating the navmesh.
         /// </summary>
-        public bool IsPrimary => _num == 0;
+        public bool IsPrimary => _quadIndex == 0;
 
         internal bool RefineFailed
         {
@@ -85,14 +85,27 @@ namespace DotsNav.Navmesh
             set => QuadEdge->RefineFailed = value;
         }
 
-        internal int Mark
+        internal int Mark // Used when removing Constraint Edges (depth-first search), to mark already visited QuadEdges
         {
             get => QuadEdge->Mark;
             set => QuadEdge->Mark = value;
         }
 
+        public EdgeType EdgeType => QuadEdge->EdgeType;
+        internal void SetEdgeType(EdgeType fixedEdgeType) { // Set EdgeType to what it is supposed to be
+            QuadEdge->EdgeType = fixedEdgeType;
+        }
+
+        internal QuadEdge* MajorEdge
+        {
+            get { return QuadEdge->MajorEdge; }
+            set { QuadEdge->MajorEdge = value; }
+        }
+
         public ReadOnly<Entity> Constraints => new(QuadEdge->Crep.Ptr, QuadEdge->Crep.Length);
         public bool Constrained => QuadEdge->Crep.Length > 0;
+        
+        // public bool IsBarrier => QuadEdge->Crep.Length > 0;
         public bool IsConstrainedBy(Entity id) => QuadEdge->Crep.Contains(id);
         public bool ConstraintsEqual(Edge* edge) => QuadEdge->Crep.SequenceEqual(edge->QuadEdge->Crep);
 
@@ -102,17 +115,17 @@ namespace DotsNav.Navmesh
         /// <summary>
         /// Returns the symmetric edge.
         /// </summary>
-        public Edge* Sym => GetEdge((_num + 2) & 3);
+        public Edge* Sym => GetEdge((_quadIndex + 2) & 3);
 
         /// <summary>
         /// Returns the dual-edge pointing from right to left.
         /// </summary>
-        internal Edge* Rot => GetEdge((_num + 1) & 3);
+        internal Edge* Rot => GetEdge((_quadIndex + 1) & 3);
 
         /// <summary>
         /// Returns the dual-edge pointing from left to right.
         /// </summary>
-        Edge* InvRot => GetEdge((_num + 3) & 3);
+        Edge* InvRot => GetEdge((_quadIndex + 3) & 3);
 
         Edge* GetEdge(int i) => (Edge*) ((byte*) QuadEdge + i * sizeof(Edge));
 

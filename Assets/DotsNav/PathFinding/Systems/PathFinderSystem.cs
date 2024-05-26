@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using DotsNav.Data;
 using DotsNav.Navmesh.Data;
 using DotsNav.Navmesh.Systems;
@@ -7,9 +8,12 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
+using Unity.Entities.UniversalDelegates;
 using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Transforms;
+
+// All changes in this file should be discarded
 
 namespace DotsNav.PathFinding.Systems
 {
@@ -44,7 +48,6 @@ namespace DotsNav.PathFinding.Systems
             var writer = queue.AsParallelWriter();
 
             Entities
-                .WithBurst()
                 .WithName("GatherAgentsToRecalculate")
                 .WithReadOnly(destroyed)
                 .ForEach((Entity entity, int nativeThreadIndex, NavmeshAgentComponent navmesh, ref PathQueryComponent query, ref DynamicBuffer<TriangleElement> triangles) =>
@@ -54,7 +57,7 @@ namespace DotsNav.PathFinding.Systems
                         var seq0 = destroyed[navmesh.Navmesh].Reinterpret<int>();
                         var seq1 = triangles.Reinterpret<int>();
 
-                        if (SortedSequencesContainIdenticalElement(seq0, seq1))
+                        if (SortedSequencesContainAnIdenticalElement(seq0, seq1))
                             query.State = PathQueryState.Invalidated;
                     }
 
@@ -62,21 +65,21 @@ namespace DotsNav.PathFinding.Systems
                         writer.Enqueue(entity);
 
                 })
-                .ScheduleParallel();
+                .Run();
 
             Job
-                .WithBurst()
                 .WithCode(() =>
                 {
                     buffer.Clear();
                     while (queue.TryDequeue(out var e))
                         buffer.Add(e);
                 })
-                .Schedule();
+                .Run();
 
-            Dependency = new FindPathJob
+
+            /* Dependency =  */new FindPathJob
                 {
-                    Agents = buffer.AsDeferredJobArray(),
+                    Agents = buffer.AsArray(),
                     NavmeshElements = GetComponentLookup<NavmeshAgentComponent>(true),
                     Navmeshes = GetComponentLookup<NavmeshComponent>(true),
                     LTWLookup = GetComponentLookup<LocalToWorld>(true),
@@ -86,13 +89,13 @@ namespace DotsNav.PathFinding.Systems
                     PathSegments = GetBufferLookup<PathSegmentElement>(),
                     TriangleIds = GetBufferLookup<TriangleElement>(),
                     PathFinder = resources,
-                }
-                .Schedule(buffer, 1, Dependency);
+                }.Execute();
+                // .Run(/* buffer, 1, Dependency */);
         }
 
 
-        [BurstCompile]
-        struct FindPathJob : IJobParallelForDefer
+
+        struct FindPathJob : IJob //ParallelForDefer
         {
             [ReadOnly]
             public NativeArray<Entity> Agents;
@@ -118,29 +121,31 @@ namespace DotsNav.PathFinding.Systems
             [ReadOnly]
             public ComponentLookup<LocalTransform> TranslationLookup;
 
-            public unsafe void Execute(int index)
+            public unsafe void Execute(/* int index */)
             {
-                Assert.IsTrue(_threadId > 0 && _threadId <= PathFinder.Instances.Length);
-                var agent = Agents[index];
-                var query = Queries[agent];
-                var segments = PathSegments[agent];
-                segments.Clear();
-                var ids = TriangleIds[agent];
-                ids.Clear();
-                var instanceIndex = _threadId - 1;
-                var instance = PathFinder.Instances[instanceIndex];
+                for (int index = 0; index < Agents.Length; index++) {
+                    // Assert.IsTrue(_threadId > 0 && _threadId <= PathFinder.Instances.Length);
+                    var agent = Agents[index];
+                    var query = Queries[agent];
+                    var segments = PathSegments[agent];
+                    segments.Clear();
+                    var ids = TriangleIds[agent];
+                    ids.Clear();
+                    var instanceIndex = _threadId - 1;
+                    var instance = PathFinder.Instances[0];
 
-                var navmeshEntity = NavmeshElements[agent].Navmesh;
-                var ltw = math.inverse(LTWLookup[navmeshEntity].Value);
-                var pos = TranslationLookup[agent];
-                query.State = instance.FindPath(math.transform(ltw, pos.Position).xz, math.transform(ltw, query.To).xz, Radii[agent], segments, ids, Navmeshes[navmeshEntity].Navmesh, out _);
-                if (query.State == PathQueryState.PathFound)
-                    ++query.Version;
-                Queries[agent] = query;
+                    var navmeshEntity = NavmeshElements[agent].Navmesh;
+                    var ltw = math.inverse(LTWLookup[navmeshEntity].Value);
+                    var pos = TranslationLookup[agent];
+                    query.State = instance.FindPath(math.transform(ltw, pos.Position).xz, math.transform(ltw, query.To).xz, Radii[agent], segments, ids, Navmeshes[navmeshEntity].Navmesh, out _);
+                    if (query.State == PathQueryState.PathFound)
+                        ++query.Version;
+                    Queries[agent] = query;
+                }
             }
         }
 
-        static bool SortedSequencesContainIdenticalElement(DynamicBuffer<int> seq0, DynamicBuffer<int> seq1)
+        static bool SortedSequencesContainAnIdenticalElement(DynamicBuffer<int> seq0, DynamicBuffer<int> seq1)
         {
             if (seq0.Length == 0 || seq1.Length == 0)
                 return false;

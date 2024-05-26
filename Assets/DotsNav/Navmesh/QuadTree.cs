@@ -39,7 +39,7 @@ namespace DotsNav.Navmesh
 
         Vertex** Malloc() => (Vertex**) Mem.Malloc<IntPtr>(_bucketSize, _allocator);
 
-        public Vertex* FindClosest(float2 p, float rangeSq = float.MaxValue)
+        public Vertex* FindClosest(float2 p, Vertex.Type vertexType = Vertex.Type.Major, float rangeSq = float.MaxValue)
         {
             var node = _root;
             while (!node->IsLeaf)
@@ -52,7 +52,7 @@ namespace DotsNav.Navmesh
             {
                 var v = node->Data[i];
                 var d = math.lengthsq(v->Point - p);
-                if (d < dist)
+                if (d < dist && v->type.HasAnyFlags(vertexType))
                 {
                     closest = v;
                     dist = d;
@@ -72,14 +72,14 @@ namespace DotsNav.Navmesh
                     while
                         (node->Parent != null && (math.any(min < node->Origin - node->HalfSize) || math.any(max >= node->Origin + node->HalfSize)));
 
-                    FindClosest(node, p, min, max, ref dist, ref closest);
+                    FindClosest(node, p, min, max, ref dist, ref closest, vertexType);
                 }
             }
 
             return closest;
         }
 
-        static void FindClosest(QuadTreeNode* n, float2 p, float2 min, float2 max, ref float dist, ref Vertex* closest)
+        static void FindClosest(QuadTreeNode* n, float2 p, float2 min, float2 max, ref float dist, ref Vertex* closest, Vertex.Type vertexType)
         {
             if (n->IsLeaf)
             {
@@ -87,7 +87,7 @@ namespace DotsNav.Navmesh
                 {
                     var v = n->Data[i];
                     var d = math.lengthsq(v->Point - p);
-                    if (d < dist)
+                    if (d < dist && v->type.HasAnyFlags(vertexType))
                     {
                         closest = v;
                         dist = d;
@@ -98,16 +98,16 @@ namespace DotsNav.Navmesh
             }
 
             if (Math.RectsOverlap(min, max, n->Origin - n->HalfSize, n->Origin))
-                FindClosest(n->BL, p, min, max, ref dist, ref closest);
+                FindClosest(n->BL, p, min, max, ref dist, ref closest, vertexType);
 
             if (Math.RectsOverlap(min, max, n->Origin - new float2(n->HalfSize, 0), n->Origin + new float2(0, n->HalfSize)))
-                FindClosest(n->TL, p, min, max, ref dist, ref closest);
+                FindClosest(n->TL, p, min, max, ref dist, ref closest, vertexType);
 
             if (Math.RectsOverlap(min, max, n->Origin - new float2(0, n->HalfSize), n->Origin + new float2(n->HalfSize, 0)))
-                FindClosest(n->BR, p, min, max, ref dist, ref closest);
+                FindClosest(n->BR, p, min, max, ref dist, ref closest, vertexType);
 
             if (Math.RectsOverlap(min, max, n->Origin, n->Origin + n->HalfSize))
-                FindClosest(n->TR, p, min, max, ref dist, ref closest);
+                FindClosest(n->TR, p, min, max, ref dist, ref closest, vertexType);
         }
 
         public void Insert(Vertex* v)

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using DotsNav.Collections;
 using DotsNav.Navmesh.Data;
 using Unity.Collections;
@@ -26,8 +27,8 @@ namespace DotsNav.Navmesh
         BlockPool<QuadEdge> _quadEdges;
         UnsafeList<IntPtr> _verticesSeq;
 
-        internal HashSet<IntPtr> V;
-        internal HashSet<IntPtr> C;
+        internal HashSet<IntPtr> V; // All vertices adjacent to modified edges
+        internal HashSet<IntPtr> C; // All edges constrained during insertion
 
         QuadTree _qt;
         EdgeSearch _edgeSearch;
@@ -39,6 +40,8 @@ namespace DotsNav.Navmesh
         Stack<UnsafeList<Entity>> _creps;
         internal HashSet<int> DestroyedTriangles;
         Deque<IntPtr> _refinementQueue;
+
+        HashSet<IntPtr> _modifiedMajorEdges;
 
         int _mark;
         int _edgeId;
@@ -79,6 +82,8 @@ namespace DotsNav.Navmesh
             DestroyedTriangles = new HashSet<int>(64, Allocator.Persistent);
             _refinementQueue = new Deque<IntPtr>(24, Allocator.Persistent);
 
+            _modifiedMajorEdges = new HashSet<IntPtr>(64, Allocator.Persistent);
+
             _mark = default;
             _edgeId = default;
             _triangleId = default;
@@ -88,6 +93,7 @@ namespace DotsNav.Navmesh
 
         void BuildBoundingBoxes()
         {
+            // Setup and Initialize Navmesh bounds, must do it manually because Insert will not work with an empty plane
             var bmin = -Extent - 1;
             var bmax = Extent + 1;
 
@@ -96,10 +102,10 @@ namespace DotsNav.Navmesh
             var topRight = CreateVertex(bmax);
             var topleft = CreateVertex(new float2(bmin.x, bmax.y));
 
-            var bottom = CreateEdge(bottomLeft, bottomRight);
-            var right = CreateEdge(bottomRight, topRight);
-            var top = CreateEdge(topRight, topleft);
-            var left = CreateEdge(topleft, bottomLeft);
+            var bottom = CreateEdge(bottomLeft, bottomRight, EdgeType.Obstacle);
+            var right = CreateEdge(bottomRight, topRight, EdgeType.Obstacle);
+            var top = CreateEdge(topRight, topleft, EdgeType.Obstacle);
+            var left = CreateEdge(topleft, bottomLeft, EdgeType.Obstacle);
 
             bottom->AddConstraint(Entity.Null);
             right->AddConstraint(Entity.Null);
@@ -111,10 +117,44 @@ namespace DotsNav.Navmesh
             Splice(top->Sym, left);
             Splice(left->Sym, bottom);
 
-            Connect(right, bottom);
+            Connect(right, bottom, EdgeType.ConnectsToObstacle);
+
+            
+
+            var bottomMinor = CreateEdge(bottomLeft, bottomRight, EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle);
+            var rightMinor = CreateEdge(bottomRight, topRight, EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle);
+            var topMinor = CreateEdge(topRight, topleft, EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle);
+            var leftMinor = CreateEdge(topleft, bottomLeft, EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle);
+
+            bottomMinor->AddConstraint(Entity.Null);
+            rightMinor->AddConstraint(Entity.Null);
+            topMinor->AddConstraint(Entity.Null);
+            leftMinor->AddConstraint(Entity.Null);
+
+            Splice(bottomMinor->Sym, rightMinor);
+            Splice(rightMinor->Sym, topMinor);
+            Splice(topMinor->Sym, leftMinor);
+            Splice(leftMinor->Sym, bottomMinor);
+
+            Connect(rightMinor, bottomMinor, EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle);
+
+            _modifiedMajorEdges.Clear();
+
 
             var bounds = stackalloc float2[] {-Extent, new float2(Extent.x, -Extent.y), Extent, new float2(-Extent.x, Extent.y), -Extent};
             Insert(bounds, 0, 5, Entity.Null, float4x4.identity);
+
+            UnityEngine.Debug.Log($"_modifiedMajorEdges.Length: {_modifiedMajorEdges.Length} ==================================================================");
+            foreach (IntPtr e in _modifiedMajorEdges) {
+                Edge* edge = (Edge*)e;
+                if (!Contains(edge->Org->Point) || !Contains(edge->Dest->Point)) {
+                    // CommonLib.DebugVector(edge->Org->Point.XOY(), edge->Dest->Point.XOY() - edge->Org->Point.XOY(), UnityEngine.Color.black, 0.01f);
+                    continue;
+                }
+                // CommonLib.DebugVector(edge->Org->Point.XOY(), edge->Dest->Point.XOY() - edge->Org->Point.XOY(), UnityEngine.Color.white, 0.01f);
+
+                InsertMajorIntoMinor(edge->Org, edge->Dest, Entity.Null);
+            }
         }
 
         internal void Dispose()
@@ -150,6 +190,6 @@ namespace DotsNav.Navmesh
         /// Allows enumeration of all edges in the navmesh
         /// </summary>
         /// <param name="sym">Set to true to enumerate symetric edges, i.e. enumerate edge(x,y) and edge(y,x)</param>
-        public EdgeEnumerator GetEdgeEnumerator(bool sym = false) => new(_verticesSeq, Extent, sym);
+        public EdgeEnumerator GetEdgeEnumerator(bool sym = false, bool isMajor = true) => new(_verticesSeq, Extent, sym, isMajor);
     }
 }

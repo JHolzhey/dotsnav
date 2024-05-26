@@ -13,7 +13,7 @@ using static Unity.Entities.SystemAPI;
 
 namespace DotsNav.Navmesh.Systems
 {
-    [BurstCompile, UpdateInGroup(typeof(DotsNavSystemGroup))]
+    [/* BurstDiscard,  */UpdateInGroup(typeof(DotsNavSystemGroup))]
     [RequireMatchingQueriesForUpdate] // todo doesnt work?
     public unsafe partial struct UpdateNavmeshSystem : ISystem
     {
@@ -27,7 +27,7 @@ namespace DotsNav.Navmesh.Systems
         ComponentLookup<LocalToWorld> _localToWorldLookup;
         BufferLookup<DestroyedTriangleElement> _destroyedTriangleBufferLookup;
 
-        [BurstCompile]
+        [BurstDiscard]
         public void OnCreate(ref SystemState state)
         {
             _navmeshQuery = 
@@ -84,12 +84,12 @@ namespace DotsNav.Navmesh.Systems
             _destroyedTriangleBufferLookup = state.GetBufferLookup<DestroyedTriangleElement>();
         }
 
-        [BurstCompile]
+        [BurstDiscard]
         public void OnDestroy(ref SystemState state)
         {
         }
 
-        [BurstCompile]
+        [BurstDiscard]
         public void OnUpdate(ref SystemState state)
         {
             state.EntityManager.GetAllUniqueSharedComponents(out NativeList<PlaneComponent> planes, Allocator.TempJob);
@@ -99,6 +99,8 @@ namespace DotsNav.Navmesh.Systems
             _navmeshLookup.Update(ref state);
             _localToWorldLookup.Update(ref state);
             _destroyedTriangleBufferLookup.Update(ref state);
+
+            UnityEngine.Debug.Assert(_insertQuery.CalculateEntityCount() <= 1, "Too many insertions");
             
             foreach (var planeEntity in planeEntities)
             {
@@ -151,13 +153,13 @@ namespace DotsNav.Navmesh.Systems
                     continue;
 
                 var data = new NativeReference<JobData>(Allocator.TempJob);
-                var dependency = new PreJob
+                /* var dependency =  */new PreJob
                 {
                     Plane = planeEntity,
                     Data = data,
                     NavmeshLookup = _navmeshLookup,
                     LocalToWorldLookup = _localToWorldLookup
-                }.Schedule(state.Dependency);
+                }.Run(); //(state.Dependency);
 
                 var ecb = HasSingleton<RunnerSingleton>() 
                     ? GetSingletonRW<EndDotsNavEntityCommandBufferSystem.Singleton>().ValueRW.CreateCommandBuffer(state.WorldUnmanaged) 
@@ -165,59 +167,59 @@ namespace DotsNav.Navmesh.Systems
                 
                 if (!destroyIsEmpty)
                 { 
-                    dependency = new DestroyJob
+                    /* dependency =  */new DestroyJob
                     {
                         Data = data,
                         Buffer = ecb
-                    }.Schedule(_destroyQuery, dependency);
+                    }.Run(_destroyQuery); // .Schedule(_destroyQuery, dependency);
 
-                    dependency = new RemoveRefinementsJob { Data = data }.Schedule(dependency);
+                    /* dependency =  */new RemoveRefinementsJob { Data = data }.Run(); // .Schedule(dependency);
                 }
                 
                 if (!insertIsEmpty)
                 {
-                    dependency = new InsertJob
+                    /* dependency =  */new InsertJob
                     {
                         Data = data,
                         Buffer = ecb
-                    }.Schedule(_insertQuery, dependency);
+                    }.Run(_insertQuery); // .Schedule(_insertQuery, dependency);
                 }
 
                 if (!insertBulkIsEmpty) 
-                    dependency = new InsertBulkJob { Data = data }.Schedule(_insertBulkQuery, dependency);
+                    /* dependency =  */new InsertBulkJob { Data = data }.Run(); // .Schedule(_insertBulkQuery, dependency);
 
                 if (!blobIsEmpty)
                 {
-                    dependency = new BlobJob
+                    /* dependency =  */new BlobJob
                     {
                         Data = data,
                         Buffer = ecb
-                    }.Schedule(_blobQuery, dependency);
+                    }.Run(_blobQuery); // .Schedule(_blobQuery, dependency);
                 }
                 
                 if (!blobBulkIsEmpty) 
-                    dependency = new BlobBulkJob { Data = data }.Schedule(_blobBulkQuery, dependency);
+                    /* dependency =  */new BlobBulkJob { Data = data }.Run(); // .Schedule(_blobBulkQuery, dependency);
 
-                dependency = new PostJob
+                /* dependency =  */new PostJob
                 {
                     Data = data,
                     DestroyedTriangleBufferLookup = _destroyedTriangleBufferLookup,
-                }.Schedule(dependency);
+                }.Run(); // .Schedule(dependency);
                 
-                dependencies.Add(dependency);
+                //dependencies.Add(dependency);
             }
             
-            state.Dependency = JobHandle.CombineDependencies(dependencies);
+            // state.Dependency = JobHandle.CombineDependencies(dependencies);
         }
 
-        [BurstCompile]
+        // [BurstDiscard]
         struct PreJob : IJob
         {
             public Entity Plane;
             public NativeReference<JobData> Data;
             [ReadOnly] public ComponentLookup<NavmeshComponent> NavmeshLookup;
             [ReadOnly] public ComponentLookup<LocalToWorld> LocalToWorldLookup;
-            
+            [BurstDiscard]
             public void Execute()
             {
                 var navmesh = NavmeshLookup[Plane].Navmesh;
@@ -235,12 +237,12 @@ namespace DotsNav.Navmesh.Systems
             }
         }
 
-        [BurstCompile]
+        // [BurstDiscard]
         partial struct DestroyJob : IJobEntity
         {
             public NativeReference<JobData> Data;
             public EntityCommandBuffer Buffer;
-            
+            [BurstDiscard]
             void Execute(Entity entity)
             {
                 Data.Value.Navmesh->RemoveConstraint(entity);
@@ -248,24 +250,24 @@ namespace DotsNav.Navmesh.Systems
             }
         }
 
-        [BurstCompile]
+        // [BurstDiscard]
         struct RemoveRefinementsJob : IJob
         {
             public NativeReference<JobData> Data;
-
+            [BurstDiscard]
             public void Execute()
             {
                 Data.Value.Navmesh->RemoveRefinements();
             }
         }
         
-        [BurstCompile]
+        // [BurstDiscard]
         partial struct InsertJob : IJobEntity
         {
             public NativeReference<JobData> Data;
             public EntityCommandBuffer Buffer;
-            
-            void Execute(Entity entity, in DynamicBuffer<VertexElement> vertices, in LocalToWorld localToWorld)
+            [BurstDiscard]
+            void Execute(Entity entity, in NavmeshObstacleComponent obstacle, in DynamicBuffer<VertexElement> vertices, in LocalToWorld localToWorld)
             {
                 var navmesh = Data.Value.Navmesh;
                 var ltw = math.mul(Data.Value.PlaneLtwInv, localToWorld.Value);
@@ -273,22 +275,22 @@ namespace DotsNav.Navmesh.Systems
 
                 if (Data.Value.Empty)
                 {
-                    navmesh->Insert((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
+                    navmesh->Insert((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw, obstacle.constraintType);
                 }
                 else
                 {
                     navmesh->C.Clear();
-                    navmesh->Insert((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
+                    navmesh->Insert((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw, obstacle.constraintType);
                     navmesh->SearchDisturbances();
                 }
             }
         }
         
-        [BurstCompile]
+        // [BurstDiscard]
         partial struct InsertBulkJob : IJobEntity
         {
             public NativeReference<JobData> Data;
-            
+            [BurstDiscard]
             void Execute(in DynamicBuffer<VertexElement> vertices, in DynamicBuffer<VertexAmountElement> amounts, in LocalToWorld localToWorld)
             {
                 var navmesh = Data.Value.Navmesh;
@@ -317,12 +319,12 @@ namespace DotsNav.Navmesh.Systems
             }
         }
         
-        [BurstCompile]
+        // [BurstDiscard]
         partial struct BlobJob : IJobEntity
         {
             public NativeReference<JobData> Data;
             public EntityCommandBuffer Buffer;
-            
+            [BurstDiscard]
             void Execute(in Entity entity, in VertexBlobComponent blob, in LocalToWorld localToWorld)
             {
                 var navmesh = Data.Value.Navmesh;
@@ -343,11 +345,11 @@ namespace DotsNav.Navmesh.Systems
             }
         }
         
-        [BurstCompile]
+        // [BurstDiscard]
         partial struct BlobBulkJob : IJobEntity
         {
             public NativeReference<JobData> Data;
-            
+            [BurstDiscard]
             void Execute(in ObstacleBlobComponent blob, in LocalToWorld localToWorld)
             {
                 var navmesh = Data.Value.Navmesh;
@@ -379,21 +381,21 @@ namespace DotsNav.Navmesh.Systems
             }
         }
 
-        [BurstCompile]
+        // [BurstDiscard]
         struct PostJob : IJob
         {
             public NativeReference<JobData> Data;
             [NativeDisableContainerSafetyRestriction]
             public BufferLookup<DestroyedTriangleElement> DestroyedTriangleBufferLookup;
-
+            [BurstDiscard]
             public void Execute()
             {
                 var navmesh = Data.Value.Navmesh;
                 
-                if (Data.Value.Empty)
+                /* if (Data.Value.Empty)
                     navmesh->GlobalRefine();
                 else
-                    navmesh->LocalRefinement();
+                    navmesh->LocalRefinement(); */
 
                 var destroyedTriangles = DestroyedTriangleBufferLookup[Data.Value.Plane];
                 destroyedTriangles.Clear();

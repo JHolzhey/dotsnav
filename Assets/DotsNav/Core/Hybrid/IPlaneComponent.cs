@@ -5,6 +5,6 @@ namespace DotsNav.Core.Hybrid
 {
     public interface IPlaneComponent : IToEntity
     {
-        void InsertObstacle(EntityManager em, Entity plane, Entity obstacle);
+        void InsertObstacle(EntityManager em, Entity plane, Entity obstacle, DotsNav.ConstraintType constraintType);
     }
 }
