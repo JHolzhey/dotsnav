@@ -52,7 +52,7 @@ namespace DotsNav.Navmesh
             {
                 var v = node->Data[i];
                 var d = math.lengthsq(v->Point - p);
-                if (d < dist && v->type.HasAnyFlags(vertexType))
+                if (d < dist && v->VertexType.HasAnyFlagsB(vertexType))
                 {
                     closest = v;
                     dist = d;
@@ -76,6 +76,9 @@ namespace DotsNav.Navmesh
                 }
             }
 
+            UnityEngine.Debug.Assert(closest->VertexType.HasAnyFlagsB(vertexType));
+            UnityEngine.Debug.Assert((vertexType == Vertex.Type.Minor && closest->GetEdge(false) != null)
+                || (vertexType == Vertex.Type.Major && closest->GetEdge(true) != null));
             return closest;
         }
 
@@ -87,7 +90,7 @@ namespace DotsNav.Navmesh
                 {
                     var v = n->Data[i];
                     var d = math.lengthsq(v->Point - p);
-                    if (d < dist && v->type.HasAnyFlags(vertexType))
+                    if (d < dist && v->VertexType.HasAnyFlagsB(vertexType))
                     {
                         closest = v;
                         dist = d;

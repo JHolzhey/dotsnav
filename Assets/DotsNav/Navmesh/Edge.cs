@@ -1,4 +1,5 @@
 using Unity.Entities;
+using System.Collections.Generic;
 
 namespace DotsNav.Navmesh
 {
@@ -9,16 +10,55 @@ namespace DotsNav.Navmesh
     /// </summary>
     public unsafe struct Edge
     {
+        [System.Flags]
+        public enum Type : byte {
+            None = 0,
+            Major = 1, // Casted to and from Vertex.Major / Vertex.Minor
+            Minor = 1 << 1,
+
+            Obstacle = 1 << 2,
+            Clearance = 1 << 3,
+
+            Terrain = 1 << 4,
+            TerrainSub = 1 << 5, // Consider renaming to Ignore
+        }
+
+        public static readonly Dictionary<Type, UnityEngine.Color> EdgeColors = new Dictionary<Type, UnityEngine.Color> {
+            { Type.Major | Type.Obstacle, UnityEngine.Color.red },
+            { Type.Major | Type.Clearance, UnityEngine.Color.magenta },
+            { Type.Minor | Type.Obstacle, UnityEngine.Color.blue },
+            { Type.Minor | Type.Clearance, UnityEngine.Color.yellow },
+            { Type.Minor | Type.Terrain, UnityEngine.Color.green },
+            { Type.Minor | Type.TerrainSub, UnityEngine.Color.cyan },
+        };
+
+        public Type EdgeType => QuadEdge->EdgeType;
+        internal void SetEdgeType(Type fixedEdgeType) {
+            QuadEdge->EdgeType = fixedEdgeType;
+        }
+        public static unsafe bool IsEdgeTypeMajor(Type edgeType) {
+            UnityEngine.Debug.Assert((edgeType.HasAnyFlagsB(Type.Major) && edgeType.HasNoFlagsB(Type.Minor))
+                || (edgeType.HasNoFlagsB(Type.Major) && edgeType.HasAnyFlagsB(Type.Minor)), $"EdgeType: {edgeType}"); // Edge type must be either Major or Minor, cannot be both
+            return edgeType.HasAnyFlagsB(Type.Major);
+        }
+
+        // TODO: Make conditional
+        public static unsafe void VerifyEdgeType(Type edgeType, bool isMajor) {
+            UnityEngine.Debug.Assert((isMajor && edgeType.HasAnyFlagsB(Type.Major) && edgeType.HasNoFlagsB(Type.Minor) && edgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance))
+                || (!isMajor && edgeType.HasAnyFlagsB(Type.Minor) && edgeType.HasNoFlagsB(Type.Major) && edgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance | Type.Terrain | Type.TerrainSub))
+                , $"isMajor: {isMajor}, EdgeType: {edgeType}");
+        }
+
         internal readonly QuadEdge* QuadEdge;
         internal Edge* Next;
-        readonly int _quadIndex;
+        readonly int _indexInQuadEdge;
         float _clearanceLeft;
         float _clearanceRight;
 
-        internal Edge(QuadEdge* quadEdge, int quadIndex) : this()
+        internal Edge(QuadEdge* quadEdge, int indexInQuadEdge) : this()
         {
             QuadEdge = quadEdge;
-            _quadIndex = quadIndex;
+            _indexInQuadEdge = indexInQuadEdge;
             _clearanceLeft = -1;
             _clearanceRight = -1;
         }
@@ -77,7 +117,7 @@ namespace DotsNav.Navmesh
         /// True for one of a quadedge's two directed edges, i.e. true for either edge(x,y) or edge(y,x).
         /// This value is not stable and can change when updating the navmesh.
         /// </summary>
-        public bool IsPrimary => _quadIndex == 0;
+        public bool IsPrimary => _indexInQuadEdge == 0;
 
         internal bool RefineFailed
         {
@@ -91,12 +131,7 @@ namespace DotsNav.Navmesh
             set => QuadEdge->Mark = value;
         }
 
-        public EdgeType EdgeType => QuadEdge->EdgeType;
-        internal void SetEdgeType(EdgeType fixedEdgeType) { // Set EdgeType to what it is supposed to be
-            QuadEdge->EdgeType = fixedEdgeType;
-        }
-
-        internal QuadEdge* MajorEdge
+        internal Edge* MajorEdge
         {
             get { return QuadEdge->MajorEdge; }
             set { QuadEdge->MajorEdge = value; }
@@ -115,17 +150,17 @@ namespace DotsNav.Navmesh
         /// <summary>
         /// Returns the symmetric edge.
         /// </summary>
-        public Edge* Sym => GetEdge((_quadIndex + 2) & 3);
+        public Edge* Sym => GetEdge((_indexInQuadEdge + 2) & 3);
 
         /// <summary>
         /// Returns the dual-edge pointing from right to left.
         /// </summary>
-        internal Edge* Rot => GetEdge((_quadIndex + 1) & 3);
+        internal Edge* Rot => GetEdge((_indexInQuadEdge + 1) & 3);
 
         /// <summary>
         /// Returns the dual-edge pointing from left to right.
         /// </summary>
-        Edge* InvRot => GetEdge((_quadIndex + 3) & 3);
+        Edge* InvRot => GetEdge((_indexInQuadEdge + 3) & 3);
 
         Edge* GetEdge(int i) => (Edge*) ((byte*) QuadEdge + i * sizeof(Edge));
 

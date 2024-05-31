@@ -9,6 +9,8 @@ using Unity.Mathematics;
 using Unity.Transforms;
 using UnityEngine;
 using UnityEngine.Rendering;
+using static System.Runtime.CompilerServices.MethodImplOptions;
+using MI = System.Runtime.CompilerServices.MethodImplAttribute;
 
 public static class CommonLib
 {
@@ -164,60 +166,153 @@ public static class MiscExtensions
         return camera.transform.forward;
     }
 
+    const int s_ByteSize = 1;
+    const int s_UIntSize = 4;
+    const int s_ULongSize = 8;
+    static MiscExtensions() {
+        Debug.Assert(s_ByteSize == UnsafeUtility.SizeOf<byte>()); // TODO: These are gauranteed so delete
+        Debug.Assert(s_UIntSize == UnsafeUtility.SizeOf<uint>());
+        Debug.Assert(s_ULongSize == UnsafeUtility.SizeOf<ulong>());
+    }
+    
+    // Private Extensions:
+    [MI(AggressiveInlining)] unsafe static byte ToByte<TEnum>(ref this TEnum t) where TEnum : struct, Enum {
+        void* enumPtr = UnsafeUtility.AddressOf(ref t);
+        return *(byte*)enumPtr;
+    }
+    [MI(AggressiveInlining)] unsafe static uint ToUInt<TEnum>(ref this TEnum t) where TEnum : struct, Enum {
+        void* enumPtr = UnsafeUtility.AddressOf(ref t);
+        return *(uint*)enumPtr;
+    }
+    [MI(AggressiveInlining)] unsafe static ulong ToULong<TEnum>(ref this TEnum t) where TEnum : struct, Enum {
+        void* enumPtr = UnsafeUtility.AddressOf(ref t);
+        return *(ulong*)enumPtr;
+    }
 
-    unsafe static uint NumericTypeUInt<TEnum>(TEnum t) where TEnum : struct, Enum {
-        void* ptr = UnsafeUtility.AddressOf(ref t);
-        return *((uint*)ptr);
+    // Public Extensions:
+    [MI(AggressiveInlining)] public static bool HasAnyFlagsB<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ByteSize, "Enum is not a byte");
+        return (lhs.ToByte() & rhs.ToByte()) > 0;
     }
-    unsafe static ulong NumericTypeULong<TEnum>(TEnum t) where TEnum : struct, Enum {
-        void* ptr = UnsafeUtility.AddressOf(ref t);
-        return *((ulong*)ptr);
+    [MI(AggressiveInlining)] public static bool HasAnyFlagsI<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_UIntSize, "Enum is not an int");
+        return (lhs.ToUInt() & rhs.ToUInt()) > 0;
     }
-    unsafe static byte NumericTypeByte<TEnum>(TEnum t) where TEnum : struct, Enum {
-        void* ptr = UnsafeUtility.AddressOf(ref t);
-        return *((byte*)ptr);
+    [MI(AggressiveInlining)] public static bool HasAnyFlagsL<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ULongSize, "Enum is not a long");
+        return (lhs.ToULong() & rhs.ToULong()) > 0;
     }
-    readonly static int s_UIntSize = UnsafeUtility.SizeOf<uint>();
-    readonly static int s_ULongSize = UnsafeUtility.SizeOf<ulong>();
-    readonly static int s_ByteSize = UnsafeUtility.SizeOf<byte>();
 
-    public static bool HasAnyFlags<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum { // HasFlag
-        int size = UnsafeUtility.SizeOf<TEnum>();
-        if (size == s_UIntSize) {
-            return (NumericTypeUInt(lhs) & NumericTypeUInt(rhs)) > 0;
-        } else if (size == s_ULongSize) {
-            return (NumericTypeULong(lhs) & NumericTypeULong(rhs)) > 0;
-        } else if (size == s_ByteSize) {
-            return (NumericTypeByte(lhs) & NumericTypeByte(rhs)) > 0;
-        }
-        throw new Exception($"No matching conversion function found for an Enum of size: {size}");
+    [MI(AggressiveInlining)] public static bool HasNoFlagsB<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ByteSize, "Enum is not a byte");
+        return (lhs.ToByte() & rhs.ToByte()) == 0;
     }
-    public static bool HasAllFlags<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-        int size = UnsafeUtility.SizeOf<TEnum>();
-        if (size == s_UIntSize) {
-            uint flags = NumericTypeUInt(rhs);
-            return (NumericTypeUInt(lhs) & flags) == flags;
-        } else if (size == s_ULongSize) {
-            ulong flags = NumericTypeULong(rhs);
-            return (NumericTypeULong(lhs) & flags) == flags;
-        } else if (size == s_ByteSize) {
-            byte flags = NumericTypeByte(rhs);
-            return (NumericTypeByte(lhs) & flags) == flags;
-        }
-        throw new Exception($"No matching conversion function found for an Enum of size: {size}");
+    [MI(AggressiveInlining)] public static bool HasNoFlagsI<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_UIntSize, "Enum is not an int");
+        return (lhs.ToUInt() & rhs.ToUInt()) == 0;
     }
-    public static bool HasOnlyFlags<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-        int size = UnsafeUtility.SizeOf<TEnum>();
-        if (size == s_UIntSize) {
-            uint flags = NumericTypeUInt(rhs);
-            return (NumericTypeUInt(lhs) | flags) == flags;
-        } else if (size == s_ULongSize) {
-            ulong flags = NumericTypeULong(rhs);
-            return (NumericTypeULong(lhs) | flags) == flags;
-        } else if (size == s_ByteSize) {
-            byte flags = NumericTypeByte(rhs);
-            return (NumericTypeByte(lhs) | flags) == flags;
-        }
-        throw new Exception($"No matching conversion function found for an Enum of size: {size}");
+    [MI(AggressiveInlining)] public static bool HasNoFlagsL<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ULongSize, "Enum is not a long");
+        return (lhs.ToULong() & rhs.ToULong()) == 0;
     }
+
+    [MI(AggressiveInlining)] public static bool HasAllFlagsB<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ByteSize, "Enum is not a byte");
+        byte flags = rhs.ToByte();
+        return (lhs.ToByte() & flags) == flags;
+    }
+    [MI(AggressiveInlining)] public static bool HasAllFlagsI<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_UIntSize, "Enum is not an int");
+        uint flags = rhs.ToUInt();
+        return (lhs.ToUInt() & flags) == flags;
+    }
+    [MI(AggressiveInlining)] public static bool HasAllFlagsL<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ULongSize, "Enum is not a long");
+        ulong flags = rhs.ToULong();
+        return (lhs.ToULong() & flags) == flags;
+    }
+
+    [MI(AggressiveInlining)] public static bool HasOnlyFlagsB<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ByteSize, "Enum is not a byte");
+        byte flags = rhs.ToByte();
+        return (lhs.ToByte() | flags) == flags;
+    }
+    [MI(AggressiveInlining)] public static bool HasOnlyFlagsI<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_UIntSize, "Enum is not an int");
+        uint flags = rhs.ToUInt();
+        return (lhs.ToUInt() | flags) == flags;
+    }
+    [MI(AggressiveInlining)] public static bool HasOnlyFlagsL<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ULongSize, "Enum is not a long");
+        ulong flags = rhs.ToULong();
+        return (lhs.ToULong() | flags) == flags;
+    }
+
+
+    [MI(AggressiveInlining)] public static int MaskB<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ByteSize, "Enum is not a byte");
+        return lhs.ToByte() & rhs.ToByte();
+    }
+    [MI(AggressiveInlining)] public static bool MaskI<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_UIntSize, "Enum is not an int");
+        return (lhs.ToUInt() & rhs.ToUInt()) > 0;
+    }
+    [MI(AggressiveInlining)] public static bool MaskL<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ULongSize, "Enum is not a long");
+        return (lhs.ToULong() & rhs.ToULong()) > 0;
+    }
+
+
+
+
+    // public static bool HasAnyFlags<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum { // HasFlag
+    //     int size = UnsafeUtility.SizeOf<TEnum>();
+    //     if (size == s_UIntSize) {
+    //         return (ToUInt(lhs) & ToUInt(rhs)) > 0;
+    //     } else if (size == s_ULongSize) {
+    //         return (ToULong(lhs) & ToULong(rhs)) > 0;
+    //     } else if (size == s_ByteSize) {
+    //         return (ToByte(lhs) & ToByte(rhs)) > 0;
+    //     }
+    //     throw new Exception($"No matching conversion function found for an Enum of size: {size}");
+    // }
+    // public static bool HasNoFlags<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum { // HasFlag
+    //     int size = UnsafeUtility.SizeOf<TEnum>();
+    //     if (size == s_UIntSize) {
+    //         return (ToUInt(lhs) & ToUInt(rhs)) == 0;
+    //     } else if (size == s_ULongSize) {
+    //         return (ToULong(lhs) & ToULong(rhs)) == 0;
+    //     } else if (size == s_ByteSize) {
+    //         return (ToByte(lhs) & ToByte(rhs)) == 0;
+    //     }
+    //     throw new Exception($"No matching conversion function found for an Enum of size: {size}");
+    // }
+    // public static bool HasAllFlags<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+    //     int size = UnsafeUtility.SizeOf<TEnum>();
+    //     if (size == s_UIntSize) {
+    //         uint flags = ToUInt(rhs);
+    //         return (ToUInt(lhs) & flags) == flags;
+    //     } else if (size == s_ULongSize) {
+    //         ulong flags = ToULong(rhs);
+    //         return (ToULong(lhs) & flags) == flags;
+    //     } else if (size == s_ByteSize) {
+    //         byte flags = ToByte(rhs);
+    //         return (ToByte(lhs) & flags) == flags;
+    //     }
+    //     throw new Exception($"No matching conversion function found for an Enum of size: {size}");
+    // }
+    // public static bool HasOnlyFlags<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
+    //     int size = UnsafeUtility.SizeOf<TEnum>();
+    //     if (size == s_UIntSize) {
+    //         uint flags = ToUInt(rhs);
+    //         return (ToUInt(lhs) | flags) == flags;
+    //     } else if (size == s_ULongSize) {
+    //         ulong flags = ToULong(rhs);
+    //         return (ToULong(lhs) | flags) == flags;
+    //     } else if (size == s_ByteSize) {
+    //         byte flags = ToByte(rhs);
+    //         return (ToByte(lhs) | flags) == flags;
+    //     }
+    //     throw new Exception($"No matching conversion function found for an Enum of size: {size}");
+    // }
 }

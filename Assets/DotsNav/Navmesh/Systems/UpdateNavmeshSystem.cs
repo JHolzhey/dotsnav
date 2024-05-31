@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using DotsNav.Data;
 using DotsNav.Hybrid;
 using DotsNav.Navmesh.Data;
@@ -245,7 +246,7 @@ namespace DotsNav.Navmesh.Systems
             [BurstDiscard]
             void Execute(Entity entity)
             {
-                Data.Value.Navmesh->RemoveConstraint(entity);
+                Data.Value.Navmesh->RemoveConstraintMajor(entity);
                 Buffer.RemoveComponent<CleanUpComponent>(entity);
             }
         }
@@ -275,12 +276,12 @@ namespace DotsNav.Navmesh.Systems
 
                 if (Data.Value.Empty)
                 {
-                    navmesh->Insert((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw, obstacle.constraintType);
+                    navmesh->Insert((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
                 }
                 else
                 {
                     navmesh->C.Clear();
-                    navmesh->Insert((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw, obstacle.constraintType);
+                    navmesh->Insert((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
                     navmesh->SearchDisturbances();
                 }
             }
@@ -396,6 +397,14 @@ namespace DotsNav.Navmesh.Systems
                     navmesh->GlobalRefine();
                 else
                     navmesh->LocalRefinement(); */
+
+                foreach (IntPtr e in navmesh->_modifiedMajorEdges) {
+                    UnityEngine.Debug.Log("OKURRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR");
+                    Edge* edge = (Edge*)e;
+
+                    // navmesh->InsertMajorIntoMinor(edge, Entity.Null);
+                }
+                navmesh->_modifiedMajorEdges.Clear();
 
                 var destroyedTriangles = DestroyedTriangleBufferLookup[Data.Value.Plane];
                 destroyedTriangles.Clear();

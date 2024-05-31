@@ -44,21 +44,6 @@ namespace DotsNav.Navmesh.Systems
                 var lines = new NativeList<Line>(navmesh.Navmesh->Vertices * 3, Allocator.Temp);
                 var enumerator = navmesh.Navmesh->GetEdgeEnumerator(true);
 
-                while (enumerator.MoveNext())
-                {
-                    var edge = enumerator.Current;
-                    if (data.DrawMode == DrawMode.Constrained && !edge->Constrained)
-                        continue;
-
-                    Color c = DebugColors.EdgeColors[(int)edge->EdgeType];
-
-                    // if (edge->Constrained) { c = data.ConstrainedColor; c.a += 30; } else { c = data.UnconstrainedColor; }
-                        
-                    var a = math.transform(ltw.Value, edge->Org->Point.ToXxY());
-                    var b = math.transform(ltw.Value, edge->Dest->Point.ToXxY());
-
-                    lines.Add(new Line(a, b, c));
-                }
 
                 var enumeratorMinor = navmesh.Navmesh->GetEdgeEnumerator(false);
 
@@ -68,7 +53,9 @@ namespace DotsNav.Navmesh.Systems
                     if (data.DrawMode == DrawMode.Constrained && !edge->Constrained)
                         continue;
 
-                    Color c = DebugColors.EdgeColors[(int)edge->EdgeType];
+                    if (!Edge.EdgeColors.TryGetValue(edge->EdgeType, out Color c)) {
+                        c = Color.white;
+                    }
                         
                     var a = math.transform(ltw.Value, edge->Org->Point.ToXxY());
                     var b = math.transform(ltw.Value, edge->Dest->Point.ToXxY());
@@ -78,7 +65,46 @@ namespace DotsNav.Navmesh.Systems
                     lines.Add(new Line(a + leftOffset, b + leftOffset, c));
                 }
 
-                Line.Draw(lines);
+
+                while (enumerator.MoveNext())
+                {
+                    var edge = enumerator.Current;
+                    if (data.DrawMode == DrawMode.Constrained && !edge->Constrained)
+                        continue;
+
+                    if (!Edge.EdgeColors.TryGetValue(edge->EdgeType, out Color c)) {
+                        c = Color.gray;
+                    }
+
+                    // if (edge->Constrained) { c = data.ConstrainedColor; c.a += 30; } else { c = data.UnconstrainedColor; }
+                        
+                    var a = math.transform(ltw.Value, edge->Org->Point.ToXxY());
+                    var b = math.transform(ltw.Value, edge->Dest->Point.ToXxY());
+
+                    lines.Add(new Line(a, b, c));
+                }
+
+                /* var enumeratorMinor = navmesh.Navmesh->GetEdgeEnumerator(false);
+
+                while (enumeratorMinor.MoveNext())
+                {
+                    var edge = enumeratorMinor.Current;
+                    if (data.DrawMode == DrawMode.Constrained && !edge->Constrained)
+                        continue;
+
+                    if (!Edge.EdgeColors.TryGetValue(edge->EdgeType, out Color c)) {
+                        c = Color.white;
+                    }
+                        
+                    var a = math.transform(ltw.Value, edge->Org->Point.ToXxY());
+                    var b = math.transform(ltw.Value, edge->Dest->Point.ToXxY());
+
+                    float3 leftOffset = 0.005f * MathLib.CalcTangentToNormal(b - a);
+
+                    lines.Add(new Line(a + leftOffset, b + leftOffset, c));
+                } */
+
+                Line.Draw(lines.AsArray());
             }
         }
     }

@@ -9,9 +9,9 @@ namespace DotsNav.Navmesh
     public unsafe struct Vertex
     {
         [System.Flags]
-        public enum Type {
+        public enum Type : byte {
             None = 0,
-            Major = 1,
+            Major = 1, // Casted to and from Edge.Major / Edge.Minor
             Minor = 1 << 1,
         }
         /// <summary>
@@ -20,7 +20,7 @@ namespace DotsNav.Navmesh
         public float2 Point { get; internal set; }
 
         Edge* Edge;
-        public Type type {
+        public Type VertexType { // TODO: Make this branchless somehow
             get {
                 Type thisType = Type.None;
                 if (Edge != null) { thisType |= Type.Major; }
@@ -35,26 +35,11 @@ namespace DotsNav.Navmesh
 
         internal Edge* GetEdge(bool isMajor) => isMajor ? Edge : MinorEdge;
         internal int SeqPos;
-        internal int Mark; // Used when potentially removing Constraint Vertices (depth-first search), to mark already visited Vertices
+        internal int Mark; // Used when potentially removing Constraint Vertices (depth-first search), to mark already visited Vertices // TODO: I don't think this is true
         internal int PointConstraints;
         internal int ConstraintHandles;
 
         public bool IsSpecial;
-
-        public static unsafe bool IsEdgeTypeMajor(EdgeType edgetype) {
-            if (edgetype == EdgeType.Obstacle || edgetype == EdgeType.ConnectsToObstacle || edgetype == EdgeType.ConnectsToObstacleWithMinorTerrainConnects) {
-                return true;
-            } else if (edgetype == EdgeType.Terrain || edgetype == EdgeType.ConnectsToTerrain || edgetype == EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle
-                || edgetype == EdgeType.Ignore) {
-                return false;
-            } else { UnityEngine.Debug.Assert(false); return true; }
-        }
-
-        public static unsafe void VerifyEdgeType(Edge* edge, bool isMajor) {
-            UnityEngine.Debug.Assert((isMajor && (edge->EdgeType == EdgeType.Obstacle || edge->EdgeType == EdgeType.ConnectsToObstacle || edge->EdgeType == EdgeType.ConnectsToObstacleWithMinorTerrainConnects))
-                || (!isMajor && (edge->EdgeType == EdgeType.Terrain || edge->EdgeType == EdgeType.ConnectsToTerrain || edge->EdgeType == EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle))
-                , $"isMajor: {isMajor}, EdgeType: {edge->EdgeType}");
-        }
 
         /// <summary>
         /// Allows for the enumeration of all edges that share this vertex as their origin:
@@ -66,8 +51,18 @@ namespace DotsNav.Navmesh
                 return new EdgeEnumerator(p, isMajor);
         }
 
+        public bool ContainsEdge(Edge* e, bool isMajor) {
+            EdgeEnumerator edgeEnumerator = GetEdgeEnumerator(isMajor);
+            while (edgeEnumerator.MoveNext()) {
+                if (edgeEnumerator.Current == e) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         internal void RemoveEdge(Edge* e, bool isMajor) {
-            VerifyEdgeType(e, isMajor);
+            DotsNav.Navmesh.Edge.VerifyEdgeType(e->EdgeType, isMajor);
             if (isMajor) {
                 Edge = e->ONext == e ? null : e->ONext;
             } else {
@@ -75,7 +70,7 @@ namespace DotsNav.Navmesh
             }
         }
         internal void AddEdge(Edge* e, bool isMajor) {
-            VerifyEdgeType(e, isMajor);
+            DotsNav.Navmesh.Edge.VerifyEdgeType(e->EdgeType, isMajor);
             if (isMajor) {
                 Edge = e;
             } else {
@@ -121,7 +116,7 @@ namespace DotsNav.Navmesh
                 
                 if (Current != null)
                 {
-                    VerifyEdgeType(Current, _debugIsMajor);
+                    DotsNav.Navmesh.Edge.VerifyEdgeType(Current->EdgeType, _debugIsMajor);
 
                     Current = Current->ONext;
                     

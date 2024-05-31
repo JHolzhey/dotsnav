@@ -45,7 +45,11 @@ namespace DotsNav.Navmesh.Hybrid
 
         void IPlaneComponent.InsertObstacle(EntityManager em, Entity plane, Entity obstacle, ConstraintType constraintType)
         {
-            em.AddComponentData(obstacle, new NavmeshObstacleComponent(constraintType));
+            if (constraintType == ConstraintType.Obstacle) {
+                em.AddComponentData(obstacle, new NavmeshObstacleComponent());
+            } else if (constraintType == ConstraintType.Terrain) {
+                em.AddComponentData(obstacle, new NavmeshTerrainComponent());
+            }
         }
 
         /// <summary>

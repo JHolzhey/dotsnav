@@ -217,7 +217,7 @@ unsafe class PolygonTest : MonoBehaviour
         if (Track)
         {
             var em = World.All[0].EntityManager;
-            var edges = em.GetComponentData<NavmeshComponent>(Navmesh.Entity).Navmesh->GetEdgeEnumerator();
+            var edges = em.GetComponentData<NavmeshComponent>(Navmesh.Entity).Navmesh->GetEdgeEnumerator(true);
                 while (edges.MoveNext())
                     foreach (var c in edges.Current->Constraints)
                         ids.Add(c);

@@ -23,15 +23,18 @@ namespace DotsNav.Navmesh
         public int Id;
         public bool RefineFailed;
 
-        unsafe QuadEdge* _majorEdge;
-        public unsafe QuadEdge* MajorEdge {
+        unsafe Edge* _majorEdge;
+        public unsafe Edge* MajorEdge {
             get {
-                UnityEngine.Debug.Assert(MathLib.IfFirstCheckSecond(_majorEdge != null, EdgeType == EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle));
+                // UnityEngine.Debug.Assert(MathLib.IfFirstCheckSecond(_majorEdge != null, EdgeType == Edge.Type.ConnectsToTerrainWithMajorConnectsToObstacle));
                 return _majorEdge;
             }
-            set { UnityEngine.Debug.Assert(value->EdgeType == EdgeType.ConnectsToObstacleWithMinorTerrainConnects); _majorEdge = value; }
+            set {
+                // UnityEngine.Debug.Assert(value->EdgeType == Edge.Type.ConnectsToObstacleWithMinorTerrainConnects);
+                _majorEdge = value;
+            }
         }
 
-        public EdgeType EdgeType;
+        public Edge.Type EdgeType;
     }
 }

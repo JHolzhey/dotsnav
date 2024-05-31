@@ -56,7 +56,7 @@ unsafe struct LctValidator
     {
         _disturbances.Clear();
 
-        var e = lct->GetEdgeEnumerator(true);
+        var e = lct->GetEdgeEnumerator(true, true);
         while (e.MoveNext())
         {
             if (e.Current->Constrained)
@@ -80,7 +80,7 @@ unsafe struct LctValidator
     {
         var clearanceCalculated = 0;
 
-        var e = lct->GetEdgeEnumerator(true);
+        var e = lct->GetEdgeEnumerator(true, true);
         while (e.MoveNext())
         {
             if (e.Current->Constrained)
@@ -165,7 +165,7 @@ unsafe struct LctValidator
         _closed.Clear();
         _removedTriangles.Clear();
 
-        var e = lct->GetEdgeEnumerator(true);
+        var e = lct->GetEdgeEnumerator(true, true);
         while (e.MoveNext())
         {
             if (!Math.Contains(e.Current->Org->Point, -lct->Extent, lct->Extent))
@@ -233,7 +233,7 @@ unsafe struct LctValidator
 
     void InitTriangles(Navmesh* lct)
     {
-        var e = lct->GetEdgeEnumerator(true);
+        var e = lct->GetEdgeEnumerator(true, true);
         while (e.MoveNext())
         {
             if (!Math.Contains(e.Current->Org->Point, -lct->Extent, lct->Extent))
@@ -248,7 +248,7 @@ unsafe struct LctValidator
 
     void IsCdt(Navmesh* lct, int constraint = -1, int vertex = -1)
     {
-        var e = lct->GetEdgeEnumerator(true);
+        var e = lct->GetEdgeEnumerator(true, true);
         while (e.MoveNext())
         {
             if (e.Current->Constrained)

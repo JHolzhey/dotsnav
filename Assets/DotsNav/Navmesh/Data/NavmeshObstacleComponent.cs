@@ -9,9 +9,9 @@ namespace DotsNav.Navmesh.Data
     /// </summary>
     public struct NavmeshObstacleComponent : IComponentData
     {
-        public ConstraintType constraintType;
-        public NavmeshObstacleComponent(ConstraintType constraintType) {
-            this.constraintType = constraintType;
-        }
+    }
+
+    public struct NavmeshTerrainComponent : IComponentData
+    {
     }
 }

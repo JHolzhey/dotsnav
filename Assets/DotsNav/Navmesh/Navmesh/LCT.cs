@@ -379,7 +379,7 @@ namespace DotsNav.Navmesh
         {
             var i = V.GetEnumerator();
             while (i.MoveNext())
-                RemoveIfEligible((Vertex*) i.Current);
+                RemoveIfEligible((Vertex*) i.Current, true, Edge.Type.Major | Edge.Type.Obstacle, Edge.Type.Major | Edge.Type.Clearance); // TODO: Ugly
         }
 
         internal void LocalRefinement()
@@ -452,7 +452,7 @@ namespace DotsNav.Navmesh
                 var c = edge->Dest->Point;
                 if (CheckTraversal(a, b, c, edge, true, out var disturbance))
                 {
-                    vRef = InsertPointInEdge(disturbance.PRef, disturbance.Edge, ConstraintType.Obstacle);
+                    vRef = InsertPointInEdge(disturbance.PRef, disturbance.Edge, Edge.Type.Major | Edge.Type.Obstacle);
                     return true;
                 }
             }
@@ -472,7 +472,7 @@ namespace DotsNav.Navmesh
                 var c = edge->Dest->Point;
                 if (CheckTraversal(a, b, c, edge, false, out var disturbance))
                 {
-                    vRef = InsertPointInEdge(disturbance.PRef, disturbance.Edge, ConstraintType.Obstacle);
+                    vRef = InsertPointInEdge(disturbance.PRef, disturbance.Edge, Edge.Type.Major | Edge.Type.Obstacle);
                     return true;
                 }
             }
@@ -537,7 +537,7 @@ namespace DotsNav.Navmesh
         internal void GlobalRefine()
         {
             var disturbances = new NativeList<Disturbance>(Allocator.Temp);
-            var e = GetEdgeEnumerator(true);
+            var e = GetEdgeEnumerator(true, true); // TODO: True
             while (e.MoveNext())
                 if (!e.Current->Constrained)
                     CheckEdgeForDisturbances(e.Current, disturbances);

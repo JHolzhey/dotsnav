@@ -41,7 +41,7 @@ namespace DotsNav.Navmesh
         internal HashSet<int> DestroyedTriangles;
         Deque<IntPtr> _refinementQueue;
 
-        HashSet<IntPtr> _modifiedMajorEdges;
+        internal HashSet<IntPtr> _modifiedMajorEdges;
 
         int _mark;
         int _edgeId;
@@ -102,10 +102,10 @@ namespace DotsNav.Navmesh
             var topRight = CreateVertex(bmax);
             var topleft = CreateVertex(new float2(bmin.x, bmax.y));
 
-            var bottom = CreateEdge(bottomLeft, bottomRight, EdgeType.Obstacle);
-            var right = CreateEdge(bottomRight, topRight, EdgeType.Obstacle);
-            var top = CreateEdge(topRight, topleft, EdgeType.Obstacle);
-            var left = CreateEdge(topleft, bottomLeft, EdgeType.Obstacle);
+            var bottom = CreateEdge(bottomLeft, bottomRight, Edge.Type.Major | Edge.Type.Obstacle, null);
+            var right = CreateEdge(bottomRight, topRight, Edge.Type.Major | Edge.Type.Obstacle, null);
+            var top = CreateEdge(topRight, topleft, Edge.Type.Major | Edge.Type.Obstacle, null);
+            var left = CreateEdge(topleft, bottomLeft, Edge.Type.Major | Edge.Type.Obstacle, null);
 
             bottom->AddConstraint(Entity.Null);
             right->AddConstraint(Entity.Null);
@@ -117,14 +117,14 @@ namespace DotsNav.Navmesh
             Splice(top->Sym, left);
             Splice(left->Sym, bottom);
 
-            Connect(right, bottom, EdgeType.ConnectsToObstacle);
+            Connect(right, bottom, Edge.Type.Major | Edge.Type.Clearance, null);
 
             
 
-            var bottomMinor = CreateEdge(bottomLeft, bottomRight, EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle);
-            var rightMinor = CreateEdge(bottomRight, topRight, EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle);
-            var topMinor = CreateEdge(topRight, topleft, EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle);
-            var leftMinor = CreateEdge(topleft, bottomLeft, EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle);
+            var bottomMinor = CreateEdge(bottomLeft, bottomRight, Edge.Type.Minor | Edge.Type.Obstacle, null);
+            var rightMinor = CreateEdge(bottomRight, topRight, Edge.Type.Minor | Edge.Type.Obstacle, null);
+            var topMinor = CreateEdge(topRight, topleft, Edge.Type.Minor | Edge.Type.Obstacle, null);
+            var leftMinor = CreateEdge(topleft, bottomLeft, Edge.Type.Minor | Edge.Type.Obstacle, null);
 
             bottomMinor->AddConstraint(Entity.Null);
             rightMinor->AddConstraint(Entity.Null);
@@ -136,10 +136,9 @@ namespace DotsNav.Navmesh
             Splice(topMinor->Sym, leftMinor);
             Splice(leftMinor->Sym, bottomMinor);
 
-            Connect(rightMinor, bottomMinor, EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle);
+            Connect(rightMinor, bottomMinor, Edge.Type.Minor | Edge.Type.Clearance, null);
 
             _modifiedMajorEdges.Clear();
-
 
             var bounds = stackalloc float2[] {-Extent, new float2(Extent.x, -Extent.y), Extent, new float2(-Extent.x, Extent.y), -Extent};
             Insert(bounds, 0, 5, Entity.Null, float4x4.identity);
@@ -153,15 +152,21 @@ namespace DotsNav.Navmesh
                 }
                 // CommonLib.DebugVector(edge->Org->Point.XOY(), edge->Dest->Point.XOY() - edge->Org->Point.XOY(), UnityEngine.Color.white, 0.01f);
 
-                InsertMajorIntoMinor(edge->Org, edge->Dest, Entity.Null);
+                InsertMajorIntoMinor(edge, Entity.Null);
             }
+
+            _modifiedMajorEdges.Clear();
         }
 
         internal void Dispose()
         {
-            var e = GetEdgeEnumerator();
+            var e = GetEdgeEnumerator(true);
             while (e.MoveNext())
                 e.Current->QuadEdge->Crep.Dispose();
+
+            var eMinor = GetEdgeEnumerator(false);
+            while (eMinor.MoveNext())
+                eMinor.Current->QuadEdge->Crep.Dispose();
 
             for (int i = 0; i < _creps.Count; i++)
                 _creps[i].Dispose();
@@ -190,6 +195,6 @@ namespace DotsNav.Navmesh
         /// Allows enumeration of all edges in the navmesh
         /// </summary>
         /// <param name="sym">Set to true to enumerate symetric edges, i.e. enumerate edge(x,y) and edge(y,x)</param>
-        public EdgeEnumerator GetEdgeEnumerator(bool sym = false, bool isMajor = true) => new(_verticesSeq, Extent, sym, isMajor);
+        public EdgeEnumerator GetEdgeEnumerator(bool isMajor, bool sym = false) => new(_verticesSeq, Extent, sym, isMajor);
     }
 }
