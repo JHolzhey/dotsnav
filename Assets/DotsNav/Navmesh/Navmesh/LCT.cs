@@ -379,7 +379,7 @@ namespace DotsNav.Navmesh
         {
             var i = V.GetEnumerator();
             while (i.MoveNext())
-                RemoveIfEligible((Vertex*) i.Current, true, Edge.Type.Major | Edge.Type.Obstacle, Edge.Type.Major | Edge.Type.Clearance); // TODO: Ugly
+                RemoveIfEligible((Vertex*) i.Current, true, Edge.Type.Major | Edge.Type.Obstacle);
         }
 
         internal void LocalRefinement()

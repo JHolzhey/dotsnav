@@ -78,7 +78,7 @@ namespace DotsNav.Samples.Code
 
             // A ray cast, make sure to dispose of the RayCastResult returned from
             // Navmesh.CastSegment or Navmesh.CastRay
-            var rbs = FindObjectsOfType<RaycastBehaviour>();
+            /* var rbs = FindObjectsOfType<RaycastBehaviour>();
             foreach (var rb in rbs)
             {
                 var from = rb.GetStart();
@@ -94,18 +94,18 @@ namespace DotsNav.Samples.Code
                 var hits = result.Hits;
                 for (int i = 0; i < hits.Length; i++)
                     _lineDrawer.DrawPoint(hits[i].Position, i == 0 ? CastHitColor : CastColor, pointSize);
-            }
+            } */
 
             // A disc cast, make sure to dispose of the DiscCastResult returned from
             // Navmesh.CastDisc
-            var dbs = FindObjectsOfType<DiscCastBehaviour>();
+            /* var dbs = FindObjectsOfType<DiscCastBehaviour>();
             foreach (var db in dbs)
             {
                 if (!Plane.Contains(db.Centre))
                     continue;
                 using var result = _navmesh.CastDisc(db.Centre, db.Radius, false);
                 _lineDrawer.DrawCircle(db.Centre, new Vector2(0, db.Radius), 2 * Mathf.PI, result.CollisionDetected ? CastHitColor : CastColor, res:200);
-            }
+            } */
 
         }
 

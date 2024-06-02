@@ -258,7 +258,7 @@ namespace DotsNav.Navmesh.Systems
             [BurstDiscard]
             public void Execute()
             {
-                Data.Value.Navmesh->RemoveRefinements();
+                // Data.Value.Navmesh->RemoveRefinements();
             }
         }
         
@@ -276,12 +276,12 @@ namespace DotsNav.Navmesh.Systems
 
                 if (Data.Value.Empty)
                 {
-                    navmesh->Insert((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
+                    navmesh->InsertMajor((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
                 }
                 else
                 {
                     navmesh->C.Clear();
-                    navmesh->Insert((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
+                    navmesh->InsertMajor((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
                     navmesh->SearchDisturbances();
                 }
             }
@@ -303,7 +303,7 @@ namespace DotsNav.Navmesh.Systems
                 {
                     foreach (var amount in amounts)
                     {
-                        navmesh->Insert(ptr, start, amount, Entity.Null, ltw);
+                        navmesh->InsertMajor(ptr, start, amount, Entity.Null, ltw);
                         start += amount;
                     }
                 }
@@ -312,7 +312,7 @@ namespace DotsNav.Navmesh.Systems
                     foreach (var amount in amounts)
                     {
                         navmesh->C.Clear();
-                        navmesh->Insert(ptr, start, amount, Entity.Null, ltw);
+                        navmesh->InsertMajor(ptr, start, amount, Entity.Null, ltw);
                         navmesh->SearchDisturbances();
                         start += amount;
                     }
@@ -335,12 +335,12 @@ namespace DotsNav.Navmesh.Systems
 
                 if (Data.Value.Empty)
                 {
-                    navmesh->Insert((float2*)vertices.GetUnsafePtr(), 0, vertices.Length, entity, ltw);
+                    navmesh->InsertMajor((float2*)vertices.GetUnsafePtr(), 0, vertices.Length, entity, ltw);
                 }
                 else
                 {
                     navmesh->C.Clear();
-                    navmesh->Insert((float2*)vertices.GetUnsafePtr(), 0, vertices.Length, entity, ltw);
+                    navmesh->InsertMajor((float2*)vertices.GetUnsafePtr(), 0, vertices.Length, entity, ltw);
                     navmesh->SearchDisturbances();
                 }
             }
@@ -364,7 +364,7 @@ namespace DotsNav.Navmesh.Systems
                     for (var i = 0; i < a.Length; i++)
                     {
                         var amount = a[i];
-                        navmesh->Insert(vertices, start, amount, Entity.Null, ltw);
+                        navmesh->InsertMajor(vertices, start, amount, Entity.Null, ltw);
                         start += amount;
                     }
                 }
@@ -374,7 +374,7 @@ namespace DotsNav.Navmesh.Systems
                     {
                         var amount = a[i];
                         navmesh->C.Clear();
-                        navmesh->Insert(vertices, start, amount, Entity.Null, ltw);
+                        navmesh->InsertMajor(vertices, start, amount, Entity.Null, ltw);
                         navmesh->SearchDisturbances();
                         start += amount;
                     }
@@ -398,13 +398,13 @@ namespace DotsNav.Navmesh.Systems
                 else
                     navmesh->LocalRefinement(); */
 
-                foreach (IntPtr e in navmesh->_modifiedMajorEdges) {
-                    UnityEngine.Debug.Log("OKURRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR");
+                foreach (IntPtr e in navmesh->ModifiedMajorEdges) {
+                    // UnityEngine.Debug.Log("OKURRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR");
                     Edge* edge = (Edge*)e;
 
-                    // navmesh->InsertMajorIntoMinor(edge, Entity.Null);
+                    // navmesh->InsertMajorInMinor(edge);
                 }
-                navmesh->_modifiedMajorEdges.Clear();
+                navmesh->ModifiedMajorEdges.Clear();
 
                 var destroyedTriangles = DestroyedTriangleBufferLookup[Data.Value.Plane];
                 destroyedTriangles.Clear();

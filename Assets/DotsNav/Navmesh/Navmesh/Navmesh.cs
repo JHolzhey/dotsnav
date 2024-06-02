@@ -41,7 +41,7 @@ namespace DotsNav.Navmesh
         internal HashSet<int> DestroyedTriangles;
         Deque<IntPtr> _refinementQueue;
 
-        internal HashSet<IntPtr> _modifiedMajorEdges;
+        internal HashSet<IntPtr> ModifiedMajorEdges;
 
         int _mark;
         int _edgeId;
@@ -82,7 +82,7 @@ namespace DotsNav.Navmesh
             DestroyedTriangles = new HashSet<int>(64, Allocator.Persistent);
             _refinementQueue = new Deque<IntPtr>(24, Allocator.Persistent);
 
-            _modifiedMajorEdges = new HashSet<IntPtr>(64, Allocator.Persistent);
+            ModifiedMajorEdges = new HashSet<IntPtr>(64, Allocator.Persistent);
 
             _mark = default;
             _edgeId = default;
@@ -121,10 +121,10 @@ namespace DotsNav.Navmesh
 
             
 
-            var bottomMinor = CreateEdge(bottomLeft, bottomRight, Edge.Type.Minor | Edge.Type.Obstacle, null);
-            var rightMinor = CreateEdge(bottomRight, topRight, Edge.Type.Minor | Edge.Type.Obstacle, null);
-            var topMinor = CreateEdge(topRight, topleft, Edge.Type.Minor | Edge.Type.Obstacle, null);
-            var leftMinor = CreateEdge(topleft, bottomLeft, Edge.Type.Minor | Edge.Type.Obstacle, null);
+            var bottomMinor = CreateEdge(bottomLeft, bottomRight, Edge.Type.Minor | Edge.Type.Obstacle, bottom);
+            var rightMinor = CreateEdge(bottomRight, topRight, Edge.Type.Minor | Edge.Type.Obstacle, right);
+            var topMinor = CreateEdge(topRight, topleft, Edge.Type.Minor | Edge.Type.Obstacle, top);
+            var leftMinor = CreateEdge(topleft, bottomLeft, Edge.Type.Minor | Edge.Type.Obstacle, left);
 
             bottomMinor->AddConstraint(Entity.Null);
             rightMinor->AddConstraint(Entity.Null);
@@ -136,15 +136,19 @@ namespace DotsNav.Navmesh
             Splice(topMinor->Sym, leftMinor);
             Splice(leftMinor->Sym, bottomMinor);
 
-            Connect(rightMinor, bottomMinor, Edge.Type.Minor | Edge.Type.Clearance, null);
+            Edge* debugTestEdge = Connect(rightMinor, bottomMinor, Edge.Type.Minor | Edge.Type.TerrainSub, null);
 
-            _modifiedMajorEdges.Clear();
+
+
+            ModifiedMajorEdges.Clear();
+
+            UnityEngine.Debug.Log($"Starting insert: =======================================================================================");
 
             var bounds = stackalloc float2[] {-Extent, new float2(Extent.x, -Extent.y), Extent, new float2(-Extent.x, Extent.y), -Extent};
-            Insert(bounds, 0, 5, Entity.Null, float4x4.identity);
+            InsertMajor(bounds, 0, 5, Entity.Null, float4x4.identity);
 
-            UnityEngine.Debug.Log($"_modifiedMajorEdges.Length: {_modifiedMajorEdges.Length} ==================================================================");
-            foreach (IntPtr e in _modifiedMajorEdges) {
+            UnityEngine.Debug.Log($"_modifiedMajorEdges.Length: {ModifiedMajorEdges.Length} =======================================================================================");
+            foreach (IntPtr e in ModifiedMajorEdges) {
                 Edge* edge = (Edge*)e;
                 if (!Contains(edge->Org->Point) || !Contains(edge->Dest->Point)) {
                     // CommonLib.DebugVector(edge->Org->Point.XOY(), edge->Dest->Point.XOY() - edge->Org->Point.XOY(), UnityEngine.Color.black, 0.01f);
@@ -152,10 +156,10 @@ namespace DotsNav.Navmesh
                 }
                 // CommonLib.DebugVector(edge->Org->Point.XOY(), edge->Dest->Point.XOY() - edge->Org->Point.XOY(), UnityEngine.Color.white, 0.01f);
 
-                InsertMajorIntoMinor(edge, Entity.Null);
+                // InsertMajorInMinor(edge);
             }
 
-            _modifiedMajorEdges.Clear();
+            ModifiedMajorEdges.Clear();
         }
 
         internal void Dispose()
@@ -195,6 +199,6 @@ namespace DotsNav.Navmesh
         /// Allows enumeration of all edges in the navmesh
         /// </summary>
         /// <param name="sym">Set to true to enumerate symetric edges, i.e. enumerate edge(x,y) and edge(y,x)</param>
-        public EdgeEnumerator GetEdgeEnumerator(bool isMajor, bool sym = false) => new(_verticesSeq, Extent, sym, isMajor);
+        public EdgeEnumerator GetEdgeEnumerator(bool isMajor, bool sym = false) => new(_verticesSeq, Extent, isMajor, sym);
     }
 }

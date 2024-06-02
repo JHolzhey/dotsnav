@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 
@@ -14,7 +15,7 @@ namespace DotsNav.Navmesh
             readonly bool _sym;
             readonly bool _isMajor;
 
-            int _vertex;
+            int _vertexIndex;
             bool _started;
             Vertex.EdgeEnumerator _enumerator;
 
@@ -22,15 +23,16 @@ namespace DotsNav.Navmesh
             /// Current edge being enumerated.
             /// </summary>
             public Edge* Current => _enumerator.Current;
+            public Vertex* CurrentVertex => (Vertex*) _vertices[_vertexIndex];
 
             readonly float2 _max;
 
-            internal EdgeEnumerator(UnsafeList<IntPtr> vertices, float2 max, bool sym, bool isMajor) : this()
+            internal EdgeEnumerator(UnsafeList<IntPtr> vertices, float2 max, bool isMajor, bool sym) : this()
             {
                 _vertices = vertices;
-                _sym = sym;
-                _isMajor = isMajor;
                 _max = max;
+                _isMajor = isMajor;
+                _sym = sym;
             }
 
             /// <summary>
@@ -43,18 +45,18 @@ namespace DotsNav.Navmesh
                     if (_vertices.Length == 0)
                         return false;
 
-                    _enumerator = ((Vertex*) _vertices[_vertex++])->GetEdgeEnumerator(_isMajor);
+                    _enumerator = ((Vertex*) _vertices[_vertexIndex++])->GetEdgeEnumerator(_isMajor);
                     _started = true;
                 }
 
                 do
                 {
-                    while (!_enumerator.MoveNext())
+                    while (!_enumerator.MoveNext()) // || _enumerator.Current == null) // TODO: Remove second condition?
                     {
-                        if (_vertex == _vertices.Length)
+                        if (_vertexIndex == _vertices.Length)
                             return false;
 
-                        _enumerator = ((Vertex*) _vertices[_vertex++])->GetEdgeEnumerator(_isMajor);
+                        _enumerator = ((Vertex*) _vertices[_vertexIndex++])->GetEdgeEnumerator(_isMajor);
                     }
 
 

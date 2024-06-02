@@ -1,5 +1,6 @@
 using Unity.Entities;
 using System.Collections.Generic;
+using Unity.Mathematics;
 
 namespace DotsNav.Navmesh
 {
@@ -26,6 +27,7 @@ namespace DotsNav.Navmesh
         public static readonly Dictionary<Type, UnityEngine.Color> EdgeColors = new Dictionary<Type, UnityEngine.Color> {
             { Type.Major | Type.Obstacle, UnityEngine.Color.red },
             { Type.Major | Type.Clearance, UnityEngine.Color.magenta },
+
             { Type.Minor | Type.Obstacle, UnityEngine.Color.blue },
             { Type.Minor | Type.Clearance, UnityEngine.Color.yellow },
             { Type.Minor | Type.Terrain, UnityEngine.Color.green },
@@ -46,7 +48,29 @@ namespace DotsNav.Navmesh
         public static unsafe void VerifyEdgeType(Type edgeType, bool isMajor) {
             UnityEngine.Debug.Assert((isMajor && edgeType.HasAnyFlagsB(Type.Major) && edgeType.HasNoFlagsB(Type.Minor) && edgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance))
                 || (!isMajor && edgeType.HasAnyFlagsB(Type.Minor) && edgeType.HasNoFlagsB(Type.Major) && edgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance | Type.Terrain | Type.TerrainSub))
-                , $"isMajor: {isMajor}, EdgeType: {edgeType}");
+                , $"isMajor: {isMajor}, edgeType: {edgeType}");
+        }
+
+        public static unsafe void VerifyEdge(Edge* e) {
+            if (IsEdgeTypeMajor(e->EdgeType)) {
+                UnityEngine.Debug.Assert(MathLib.LogicalIf(e->EdgeType.HasAnyFlagsB(Type.Obstacle), e->Constrained) && MathLib.LogicalIf(e->Constrained, e->EdgeType.HasAnyFlagsB(Type.Obstacle)),
+                    $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->Constrained}");
+            } else {
+                UnityEngine.Debug.Assert(MathLib.LogicalIf(e->EdgeType.HasAnyFlagsB(Type.Terrain), e->Constrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->Constrained}");
+                if (e->EdgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance)) {
+                    UnityEngine.Debug.Assert(e->MajorEdge != null, "Minor Obstaces and Clearances must have Major edges");
+                    if (e->MajorEdge != null) {
+                        UnityEngine.Debug.Assert((e->EdgeType & ~ Type.Minor) == (e->MajorEdge->EdgeType & ~Type.Major), $"e->EdgeType: {e->EdgeType}, e->MajorEdge->EdgeType: {e->MajorEdge->EdgeType}");
+                    }
+                }
+            }
+            if (e->MajorEdge != null) {
+                UnityEngine.Debug.Assert((e->EdgeType & ~ Type.Minor) == (e->MajorEdge->EdgeType & ~Type.Major), $"e->EdgeType: {e->EdgeType}, e->MajorEdge->EdgeType: {e->MajorEdge->EdgeType}");
+            }
+        }
+        public static unsafe void VerifyEdge(Edge* e, bool isMajor) {
+            VerifyEdgeType(e->EdgeType, isMajor);
+            VerifyEdge(e);
         }
 
         internal readonly QuadEdge* QuadEdge;
@@ -133,8 +157,8 @@ namespace DotsNav.Navmesh
 
         internal Edge* MajorEdge
         {
-            get { return QuadEdge->MajorEdge; }
-            set { QuadEdge->MajorEdge = value; }
+            get => QuadEdge->MajorEdge;
+            set => QuadEdge->MajorEdge = value;
         }
 
         public ReadOnly<Entity> Constraints => new(QuadEdge->Crep.Ptr, QuadEdge->Crep.Length);
@@ -142,9 +166,9 @@ namespace DotsNav.Navmesh
         
         // public bool IsBarrier => QuadEdge->Crep.Length > 0;
         public bool IsConstrainedBy(Entity id) => QuadEdge->Crep.Contains(id);
-        public bool ConstraintsEqual(Edge* edge) => QuadEdge->Crep.SequenceEqual(edge->QuadEdge->Crep);
+        public bool ConstraintsEqual(Edge* edge) => EdgeType == edge->EdgeType && QuadEdge->Crep.SequenceEqual(edge->QuadEdge->Crep);
 
-        internal void AddConstraint(Entity id) => QuadEdge->Crep.InsertSorted(id);
+        internal void AddConstraint(Entity id) { if (id.Index != int.MinValue) { QuadEdge->Crep.InsertSorted(id); } else { UnityEngine.Debug.Log("Not adding Major Constraint"); } }
         internal void RemoveConstraint(Entity id) => QuadEdge->Crep.Remove(id);
 
         /// <summary>

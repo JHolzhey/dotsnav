@@ -62,7 +62,7 @@ namespace DotsNav.Navmesh
         }
 
         internal void RemoveEdge(Edge* e, bool isMajor) {
-            DotsNav.Navmesh.Edge.VerifyEdgeType(e->EdgeType, isMajor);
+            DotsNav.Navmesh.Edge.VerifyEdge(e, isMajor);
             if (isMajor) {
                 Edge = e->ONext == e ? null : e->ONext;
             } else {
@@ -110,7 +110,7 @@ namespace DotsNav.Navmesh
                 {
                     Current = _start;
                     _started = true;
-                    return true;
+                    return true; // TODO: Just do Current != null
                 }
 
                 

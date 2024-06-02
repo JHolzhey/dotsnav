@@ -18,7 +18,7 @@ namespace DotsNav.Navmesh
             _steps = new List<Step>(intialSteps, allocator);
         }
 
-        public unsafe bool Search(Vertex* start, Vertex* goal, Entity constraintId)
+        public unsafe bool Search(Vertex* start, Vertex* goal, Entity constraintId, Edge.Type newConstraintEdgeType)
         {
             Assert.IsTrue(start != goal);
             Clear();
@@ -44,6 +44,7 @@ namespace DotsNav.Navmesh
                     {
                         if (!step.Edge->IsConstrainedBy(constraintId))
                         {
+                            UnityEngine.Debug.LogError("Adding constraint");
                             step.Edge->AddConstraint(constraintId);
                             Navmesh.ResetClearance(step.Edge);
                         }
