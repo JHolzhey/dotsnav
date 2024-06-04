@@ -7,6 +7,7 @@ using DotsNav.Core;
 using System.Drawing;
 using Unity.Entities.UniversalDelegates;
 using System.Linq.Expressions;
+using DotsNav.Drawing;
 
 namespace DotsNav.Navmesh
 {
@@ -55,7 +56,7 @@ namespace DotsNav.Navmesh
         void Swap(Edge* e)
         {
             UnityEngine.Debug.Log("Swap");
-            UnityEngine.Debug.Assert(!e->Constrained && e->EdgeType.HasNoFlagsB(Edge.Type.Obstacle | Edge.Type.Terrain) && !e->EdgeType.HasAllFlagsB(Edge.Type.Clearance | Edge.Type.Minor)
+            UnityEngine.Debug.Assert(!e->Constrained && e->EdgeType.HasNoFlagsB(Edge.Type.Obstacle | Edge.Type.Terrain) && !e->EdgeType.HasAllFlagsB(Edge.Type.Minor | Edge.Type.Clearance)
                 , $"Cannot flip a constrained edge. EdgeType: {e->EdgeType}, e->Constrained: {e->Constrained}");
             
             Edge.VerifyEdge(e);
@@ -107,23 +108,21 @@ namespace DotsNav.Navmesh
         }
 
         // https://www.researchgate.net/publication/2478154_Fully_Dynamic_Constrained_Delaunay_Triangulations
-        void FlipEdges(float2 p, Edge.Type newConstraintEdgeType) // Calls Swap
+        void FlipEdges(float2 p, bool isMajor) // Calls Swap
         {
-            UnityEngine.Debug.Log($"FlipEdges: {newConstraintEdgeType}");
+            UnityEngine.Debug.Log($"FlipEdges: isMajor: {isMajor}");
             while (_flipStack.Count > 0)
             {
                 var e = _flipStack.Pop();
                 Assert.IsTrue(Math.Ccw(e->Org->Point, e->Dest->Point, p));
 
-                Edge.VerifyEdge(e);
+                Edge.VerifyEdge(e, isMajor);
 
                 bool isSwap = false;
-                if (Edge.IsEdgeTypeMajor(newConstraintEdgeType)) {
-                    UnityEngine.Debug.Assert(Edge.IsEdgeTypeMajor(e->EdgeType));
+                if (isMajor) {
                     UnityEngine.Debug.Assert(MathLib.LogicalIf(e->EdgeType.HasAnyFlagsB(Edge.Type.Obstacle), e->Constrained));
                     isSwap = e->EdgeType.HasNoFlagsB(Edge.Type.Obstacle); // If is a major Obstacle
                 } else { // constraint is Minor
-                    UnityEngine.Debug.Assert(!Edge.IsEdgeTypeMajor(newConstraintEdgeType) && !Edge.IsEdgeTypeMajor(e->EdgeType));
                     UnityEngine.Debug.Assert(MathLib.LogicalIf(e->EdgeType.HasAnyFlagsB(Edge.Type.Terrain), e->Constrained));
                     isSwap = e->EdgeType.HasNoFlagsB(Edge.Type.Terrain | Edge.Type.Obstacle | Edge.Type.Clearance);
                 }
@@ -178,9 +177,9 @@ namespace DotsNav.Navmesh
 
             Edge.Type newConnectionEdgesType = Edge.Type.None;
             if (isMajor) { // All Edges connecting to Major (i.e. an Obstacle) constraint are Clearance edges
-                newConnectionEdgesType = Edge.Type.Clearance | Edge.Type.Major;
+                newConnectionEdgesType = Edge.Type.Major | Edge.Type.Clearance;
             } else { // All Edges connecting to Minor constraints are TerrainSub edges
-                newConnectionEdgesType = Edge.Type.TerrainSub | Edge.Type.Minor;
+                newConnectionEdgesType = Edge.Type.Minor | Edge.Type.TerrainSub;
             }
 
             Assert.IsTrue(c != edge);
@@ -342,7 +341,7 @@ namespace DotsNav.Navmesh
             return _qt.FindClosest(p);
         }
 
-        Vertex* InsertPoint(float2 p, Edge.Type newConstraintEdgeType, Vertex* existingVertex = null)
+        Vertex* InsertPoint(float2 p, Edge.Type newConstraintEdgeType, Vertex* existingMajorVertex = null)
         {
             UnityEngine.Debug.Log($"InsertPoint; {newConstraintEdgeType}, Vertex.Type: {(Vertex.Type)(newConstraintEdgeType & (Edge.Type.Major | Edge.Type.Minor))}");
             var closest = _qt.FindClosest(p, (Vertex.Type)(newConstraintEdgeType & (Edge.Type.Major | Edge.Type.Minor))); // Extract the Major or Minor bit
@@ -409,14 +408,14 @@ namespace DotsNav.Navmesh
                 if (inEdge != null)
                 {
                     Assert.IsTrue(SplitIsRobust(p, inEdge));
-                    return InsertPointInEdge(p, inEdge, /* betterConstraintType */ newConstraintEdgeType, existingVertex);
+                    return InsertPointInEdge(p, inEdge, /* betterConstraintType */ newConstraintEdgeType, existingMajorVertex);
                 }
 
-                return InsertPointInFace(p, e, /* betterConstraintType */ newConstraintEdgeType, existingVertex);
+                return InsertPointInFace(p, e, /* betterConstraintType */ newConstraintEdgeType, existingMajorVertex);
             }
         }
 
-        Vertex* InsertPointInEdge(float2 point, Edge* edge, Edge.Type newConstraintEdgeType, Vertex* existingVertex = null)
+        Vertex* InsertPointInEdge(float2 point, Edge* edge, Edge.Type newConstraintEdgeType, Vertex* existingMajorVertex = null)
         {
             UnityEngine.Debug.Log($"InsertPointInEdge; {newConstraintEdgeType}");
             _flipStack.Push(edge->ONext->Sym);
@@ -431,11 +430,15 @@ namespace DotsNav.Navmesh
             DestroyedTriangle(edge->TriangleId);
             DestroyedTriangle(edge->Sym->TriangleId);
 
+            bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
+            Edge.VerifyEdge(edge, isMajor);
+
             var crep = edge->QuadEdge->Crep;
             var e = edge->OPrev;
             C.Remove((IntPtr) edge);
 
-            
+            UnityEngine.Debug.Assert(isMajor == Edge.IsEdgeTypeMajor(edge->EdgeType), $"edge->EdgeType: {edge->EdgeType}, newConstraintEdgeType: {newConstraintEdgeType}");
+            UnityEngine.Debug.Assert(MathLib.LogicalIf(isMajor, existingMajorVertex == null), $"newConstraintEdgeType: {newConstraintEdgeType}");
             UnityEngine.Debug.Assert(MathLib.LogicalIf(newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle), edge->EdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Terrain)), $"edge->EdgeType: {edge->EdgeType}");
             UnityEngine.Debug.Assert(MathLib.LogicalIf(newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Terrain), newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Minor)
                 && edge->EdgeType.HasAnyFlagsB(Edge.Type.Minor) && edge->EdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Terrain | Edge.Type.Clearance)), $"edge->EdgeType: {edge->EdgeType}");
@@ -443,7 +446,7 @@ namespace DotsNav.Navmesh
                 && edge->EdgeType.HasAnyFlagsB(Edge.Type.Minor) && edge->EdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Terrain | Edge.Type.Clearance)), $"edge->EdgeType: {edge->EdgeType}");
 
             Edge.Type newConnectionEdgesType = Edge.Type.None;
-            if (Edge.IsEdgeTypeMajor(newConstraintEdgeType)) { // Major Obstacles only intersect with Major Obstacles
+            if (isMajor) { // Major Obstacles only intersect with Major Obstacles
                 UnityEngine.Debug.Assert(edge->EdgeType.HasAllFlagsB(Edge.Type.Major | Edge.Type.Obstacle) && edge->EdgeType == newConstraintEdgeType, $"edge->EdgeType: {edge->EdgeType}");
                 newConnectionEdgesType = Edge.Type.Major | Edge.Type.Clearance;
             } else { // is Minor edge
@@ -459,33 +462,17 @@ namespace DotsNav.Navmesh
             }
             Edge* majorEdge = edge->MajorEdge;
             Edge.Type newSplitConstraintEdgesType = edge->EdgeType;
-            RemoveEdge(edge, false, Edge.IsEdgeTypeMajor(newConstraintEdgeType));
-
-            /* if (constraintEdgeType == ConstraintType.Terrain && edge->EdgeType == EdgeType.ConnectsToObstacle) {
-                newMajorEdge = edge->QuadEdge; // Don't remove edge, make it the majorEdge of new subEdges
-                edge->SetEdgeType(EdgeType.ConnectsToObstacleWithMinorTerrainConnects);
-                newEdgesType = EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle;
-                
-                // edge->Org->RemoveEdge(edge, ); // If vertex points to edge as head, then remove it
-                // edge->Dest->RemoveEdge(edge->Sym, );
-
-                //RemoveEdge(edge, false, false); // Debug
-            }
-            else if (constraintEdgeType == ConstraintType.Terrain && edge->EdgeType == EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle) {
-                newMajorEdge = edge->MajorEdge;
-                newEdgesType = EdgeType.ConnectsToTerrainWithMajorConnectsToObstacle;
-                RemoveEdge(edge, false, false);
-            }
-            else { // if (constraintEdgeType == ConstraintType.Obstacle && edge->EdgeType == EdgeType.Obstacle)
-                RemoveEdge(edge, false, true);
-                newEdgesType = edge->EdgeType;
-            } */
+            RemoveEdge(edge, false, isMajor);
 
 
-            var result = existingVertex != null ? existingVertex : CreateVertex(point);
+            var result = existingMajorVertex != null ? existingMajorVertex : CreateVertex(point);
             V.TryAdd((IntPtr) result);
             V.TryAdd((IntPtr) e->Org);
             var newEdge = CreateEdge(e->Org, result, newSplitConstraintEdgesType, majorEdge);
+
+                float3 org = newEdge->Org->Point.XOY()+new float3(0.007f);
+                CommonLib.DebugVector(org, newEdge->Dest->Point.XOY()+new float3(0.007f) - org, Edge.EdgeColors[newSplitConstraintEdgesType], 0.001f);
+
             newEdge->QuadEdge->Crep = GetCrep(crep);
             Edge.VerifyEdge(newEdge);
             Splice(newEdge, e);
@@ -501,6 +488,10 @@ namespace DotsNav.Navmesh
             V.TryAdd((IntPtr) newEdge->Sym->Org);
 
             newEdge = Connect(e, newEdge->Sym, newSplitConstraintEdgesType, majorEdge);
+
+                float3 org2 = newEdge->Org->Point.XOY()+new float3(0.007f);
+                CommonLib.DebugVector(org2, newEdge->Dest->Point.XOY()+new float3(0.007f) - org2, Edge.EdgeColors[newSplitConstraintEdgesType], 0.001f);
+
             newEdge->QuadEdge->Crep = crep;
             Edge.VerifyEdge(newEdge);
             e = newEdge->OPrev;
@@ -511,7 +502,7 @@ namespace DotsNav.Navmesh
             var debugE = Connect(e, newEdge->Sym, newConnectionEdgesType, null);
             Edge.VerifyEdge(debugE);
 
-            var te = result->GetEdge(Edge.IsEdgeTypeMajor(newConstraintEdgeType));
+            var te = result->GetEdge(isMajor);
             Edge.VerifyEdge(te);
             NewTriangle(te);
             te = te->ONext;
@@ -524,7 +515,7 @@ namespace DotsNav.Navmesh
             Edge.VerifyEdge(te);
             NewTriangle(te);
 
-            FlipEdges(point, newConstraintEdgeType);
+            FlipEdges(point, isMajor);
             return result;
         }
 
@@ -537,10 +528,9 @@ namespace DotsNav.Navmesh
 
         UnsafeList<Entity> GetCrep() => _creps.Count > 0 ? _creps.Pop() : new UnsafeList<Entity>(CrepMinCapacity, Allocator.Persistent);
 
-        Vertex* InsertPointInFace(float2 p, Edge* edge, Edge.Type newConstraintEdgeType, Vertex* existingVertex = null) // TODO: Perhaps make separate function to avoid existingVertex branch eventually
+        Vertex* InsertPointInFace(float2 p, Edge* edge, Edge.Type newConstraintEdgeType, Vertex* existingMajorVertex = null) // TODO: Perhaps make separate function to avoid existingMajorVertex branch eventually
         {
             UnityEngine.Debug.Log($"InsertPointInFace; {newConstraintEdgeType}");
-            Edge.VerifyEdge(edge);
 
             _flipStack.Push(edge->ONext->Sym);
             _flipStack.Push(edge);
@@ -551,20 +541,25 @@ namespace DotsNav.Navmesh
 
             DestroyedTriangle(edge->TriangleId);
 
-            var result = existingVertex != null ? existingVertex : CreateVertex(p);
+            var result = existingMajorVertex != null ? existingMajorVertex : CreateVertex(p);
 
             V.TryAdd((IntPtr) result);
             V.TryAdd((IntPtr) edge->Org);
             V.TryAdd((IntPtr) edge->Dest);
             V.TryAdd((IntPtr) edge->LNext->Dest);
 
+            bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
+            Edge.VerifyEdge(edge, isMajor);
+
+            UnityEngine.Debug.Assert(MathLib.LogicalIf(isMajor, existingMajorVertex == null), $"newConstraintEdgeType: {newConstraintEdgeType}");
+
             Edge.Type newConnectionEdgesType = Edge.Type.None;
-            if (Edge.IsEdgeTypeMajor(newConstraintEdgeType)) { // All Edges connecting to Major (i.e. an Obstacle) constraint are Clearance edges
+            if (isMajor) { // All Edges connecting to Major (i.e. an Obstacle) constraint are Clearance edges
                 UnityEngine.Debug.Assert(newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle), $"newConstraintEdgeType: {newConstraintEdgeType}, edge->EdgeType: {edge->EdgeType}");
-                newConnectionEdgesType = Edge.Type.Clearance | Edge.Type.Major;
+                newConnectionEdgesType = Edge.Type.Major | Edge.Type.Clearance;
             } else { // All Edges connecting to Minor constraints are TerrainSub edges
                 UnityEngine.Debug.Assert(newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Terrain | Edge.Type.Obstacle | Edge.Type.Clearance), $"newConstraintEdgeType: {newConstraintEdgeType}, edge->EdgeType: {edge->EdgeType}");
-                newConnectionEdgesType = Edge.Type.TerrainSub | Edge.Type.Minor;
+                newConnectionEdgesType = Edge.Type.Minor | Edge.Type.TerrainSub;
             }
 
             var newEdge = CreateEdge(edge->Org, result, newConnectionEdgesType, null);
@@ -575,7 +570,7 @@ namespace DotsNav.Navmesh
             var debugE = Connect(newEdge->OPrev, newEdge->Sym, newConnectionEdgesType, null);
             Edge.VerifyEdge(debugE);
 
-            var te = result->GetEdge(Edge.IsEdgeTypeMajor(newConstraintEdgeType));
+            var te = result->GetEdge(isMajor);
             Edge.VerifyEdge(te);
             NewTriangle(te);
             te = te->ONext;
@@ -585,7 +580,7 @@ namespace DotsNav.Navmesh
             Edge.VerifyEdge(te);
             NewTriangle(te);
 
-            FlipEdges(p, newConstraintEdgeType);
+            FlipEdges(p, isMajor);
             return result;
         }
 
@@ -637,12 +632,12 @@ namespace DotsNav.Navmesh
                         UnityEngine.Debug.Log("InsertSegmentRecursive - p0 modified, insert point");
                         var after = InsertPoint(p, newConstraintEdgeType);
                         InsertSegmentRecursive(after, p1.Vertex, id, dir, start, end, newConstraintEdgeType, majorEdge);
-                        _edgeSearch.Search(p0.Vertex, after, id);
+                        _edgeSearch.Search(p0.Vertex, after, id, newConstraintEdgeType, majorEdge);
                     }
                     else
                     {
                         UnityEngine.Debug.Log("InsertSegmentRecursive - p0 modified");
-                        _edgeSearch.Search(p0.Vertex, p1.Vertex, id);
+                        _edgeSearch.Search(p0.Vertex, p1.Vertex, id, newConstraintEdgeType, majorEdge);
                     }
                 }
                 else if (!p0.Modified) // p1 modified
@@ -652,12 +647,12 @@ namespace DotsNav.Navmesh
                         UnityEngine.Debug.Log("InsertSegmentRecursive - p1 modified, insert point");
                         var before = InsertPoint(p, newConstraintEdgeType);
                         InsertSegmentRecursive(p0.Vertex, before, id, dir, start, end, newConstraintEdgeType, majorEdge);
-                        _edgeSearch.Search(before, p1.Vertex, id);
+                        _edgeSearch.Search(before, p1.Vertex, id, newConstraintEdgeType, majorEdge);
                     }
                     else
                     {
                         UnityEngine.Debug.Log("InsertSegmentRecursive - p1 modified");
-                        _edgeSearch.Search(p0.Vertex, p1.Vertex, id);
+                        _edgeSearch.Search(p0.Vertex, p1.Vertex, id, newConstraintEdgeType, majorEdge);
                     }
                 }
                 else // both modified
@@ -669,13 +664,13 @@ namespace DotsNav.Navmesh
                         var v0 = InsertPoint(s1, newConstraintEdgeType);
                         var v1 = InsertPoint(s2, newConstraintEdgeType);
                         InsertSegmentRecursive(v0, v1, id, dir, start, end, newConstraintEdgeType, majorEdge);
-                        _edgeSearch.Search(p0.Vertex, v0, id);
-                        _edgeSearch.Search(v1, p1.Vertex, id);
+                        _edgeSearch.Search(p0.Vertex, v0, id, newConstraintEdgeType, majorEdge);
+                        _edgeSearch.Search(v1, p1.Vertex, id, newConstraintEdgeType, majorEdge);
                     }
                     else
                     {
                         UnityEngine.Debug.Log("InsertSegmentRecursive - both modified");
-                        _edgeSearch.Search(p0.Vertex, p1.Vertex, id);
+                        _edgeSearch.Search(p0.Vertex, p1.Vertex, id, newConstraintEdgeType, majorEdge);
                     }
                 }
 
@@ -689,25 +684,21 @@ namespace DotsNav.Navmesh
             UnityEngine.Debug.Log($"GetNextPoint; {newConstraintEdgeType}");
             InfiniteLoopDetection.Reset();
 
-            // bool isMajor = false;
-            // if (constraintEdgeType == ConstraintType.MajorEdgeInsertedToMinorGraph) {
-            //     isMajor = true;
-            // } else {
-            //     isMajor = Edge.IsEdgeTypeMajor((EdgeType)constraintEdgeType);
-            // }
-            var e = GetLeftEdge(a, b->Point, Edge.IsEdgeTypeMajor(newConstraintEdgeType));
+            bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
+
+            var e = GetLeftEdge(a, b->Point, isMajor);
             while (e->Dest != b)
             {
                 InfiniteLoopDetection.Register(1000, "GetNextPoint");
 
                 var d = Math.TriArea(a->Point, b->Point, e->Dest->Point);
 
-                UnityEngine.Debug.Assert(Edge.IsEdgeTypeMajor(e->EdgeType) == Edge.IsEdgeTypeMajor(newConstraintEdgeType));
+                UnityEngine.Debug.Assert(Edge.IsEdgeTypeMajor(e->EdgeType) == isMajor);
 
-                Edge.VerifyEdge(e);
+                Edge.VerifyEdge(e, isMajor);
 
                 bool isEdgeConstrained = false;
-                if (Edge.IsEdgeTypeMajor(newConstraintEdgeType)) {
+                if (isMajor) {
                     UnityEngine.Debug.Assert(newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle), $"newConstraintEdgeType: {newConstraintEdgeType}, edge->EdgeType: {e->EdgeType}");
                     isEdgeConstrained = e->EdgeType.HasAnyFlagsB(Edge.Type.Obstacle);
                     UnityEngine.Debug.Assert(MathLib.LogicalIf(isEdgeConstrained, e->Constrained) && MathLib.LogicalIf(e->Constrained, isEdgeConstrained),
@@ -716,7 +707,7 @@ namespace DotsNav.Navmesh
                     UnityEngine.Debug.Assert(newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Terrain | Edge.Type.Obstacle | Edge.Type.Clearance), $"newConstraintEdgeType: {newConstraintEdgeType}, edge->EdgeType: {e->EdgeType}");
                     isEdgeConstrained = e->EdgeType.HasAnyFlagsB(Edge.Type.Terrain | Edge.Type.Obstacle | Edge.Type.Clearance);
 
-                    //UnityEngine.Debug.Assert(MathLib.IfFirstCheckSecond(newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Clearance), !e->EdgeType.HasAnyFlagsB(Edge.Type.Clearance)), $"edge->EdgeType: {e->EdgeType}, This might be ok here where intersection hasn't happened yet");
+                    //UnityEngine.Debug.Assert(MathLib.LogicalIf(newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Clearance), !e->EdgeType.HasAnyFlagsB(Edge.Type.Clearance)), $"edge->EdgeType: {e->EdgeType}, This might be ok here where intersection hasn't happened yet");
                     
                     // TODO: If newConstraint is an Obstacle or a Clearance, and e is a Clearance then should isEdgeConstrained be false?
                     // Does it change anything? Improve performance?
@@ -784,6 +775,7 @@ namespace DotsNav.Navmesh
                         return point;
                     }
 
+                    UnityEngine.Debug.Assert(MathLib.LogicalIf(newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Clearance | Edge.Type.Obstacle), !e->EdgeType.HasAnyFlagsB(Edge.Type.Clearance)), $"edge->EdgeType: {e->EdgeType}");
                     var vert = InsertPointInEdge(p, e, newConstraintEdgeType);
                     return new Point
                     {
@@ -926,23 +918,27 @@ namespace DotsNav.Navmesh
             Connect(a, b, id, newConstraintEdgeType, majorEdge);
         }
 
-        internal void SetEdgeTypeMajor(Edge* edge, Edge.Type newConstraintEdgeType, Edge* majorEdge) {
+        internal static void SetEdgeTypeMajor(Edge* edge, Edge.Type newEdgeType, Edge* majorEdge) {
             Edge.Type existingEdgeType = edge->EdgeType;
 
             // Debug: // This might be fine:
             if (edge->MajorEdge != null && majorEdge != null) {
                 UnityEngine.Debug.Assert(edge->MajorEdge == majorEdge || edge->MajorEdge == majorEdge->Sym,
-                $"edge->MajorEdge: {(long)edge->MajorEdge}, majorEdge: {(long)majorEdge}, edge->MajorEdgeType: {edge->MajorEdge->EdgeType}, majorEdge->EdgeType: {majorEdge->EdgeType}");
+                    $"edge->MajorEdge: {(long)edge->MajorEdge}, majorEdge: {(long)majorEdge}, edge->MajorEdgeType: {edge->MajorEdge->EdgeType}, majorEdge->EdgeType: {majorEdge->EdgeType}");
             }
 
-            UnityEngine.Debug.Assert(Edge.IsEdgeTypeMajor(existingEdgeType) && Edge.IsEdgeTypeMajor(newConstraintEdgeType), $"edgeType: {existingEdgeType}, newConstraintEdgeType: {newConstraintEdgeType}");
+            UnityEngine.Debug.Assert(Edge.IsEdgeTypeMajor(existingEdgeType) && Edge.IsEdgeTypeMajor(newEdgeType), $"edgeType: {existingEdgeType}, newEdgeType: {newEdgeType}");
             
-            UnityEngine.Debug.Assert(existingEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance) && newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)
-                , $"edgeType: {existingEdgeType}, newConstraintEdgeType: {newConstraintEdgeType}");
+            UnityEngine.Debug.Assert(existingEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance) && newEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)
+                , $"edgeType: {existingEdgeType}, newEdgeType: {newEdgeType}");
 
-            UnityEngine.Debug.Assert(MathLib.LogicalIf(edge->Constrained, newConstraintEdgeType.HasAllFlagsB(Edge.Type.Obstacle)));
-            UnityEngine.Debug.Assert(MathLib.LogicalIf(newConstraintEdgeType.HasAllFlagsB(Edge.Type.Clearance), !edge->Constrained));
+            UnityEngine.Debug.Assert(MathLib.LogicalIf(edge->Constrained, newEdgeType.HasAllFlagsB(Edge.Type.Obstacle)));
+            UnityEngine.Debug.Assert(MathLib.LogicalIf(newEdgeType.HasAllFlagsB(Edge.Type.Clearance), !edge->Constrained));
 
+            edge->SetEdgeType(newEdgeType);
+
+            edge->MajorEdge = majorEdge;
+            
             // Go through all minor edges referencing this major edge and Overwrite their edge type as well
             Vertex* currentMinorOrg = edge->Org;
             while (currentMinorOrg != edge->Dest)
@@ -955,7 +951,7 @@ namespace DotsNav.Navmesh
                 {
                     if (i.Current->MajorEdge == edge || i.Current->MajorEdge == edge->Sym)
                     {
-                        OverwriteEdgeType(i.Current, Edge.Type.Minor | (newConstraintEdgeType & ~Edge.Type.Major), edge);
+                        SetEdgeTypeMinor(i.Current, Edge.Type.Minor | (newEdgeType & ~Edge.Type.Major), edge);
                         currentMinorOrg = i.Current->Dest;
                         break;
                     }
@@ -965,56 +961,45 @@ namespace DotsNav.Navmesh
                 }
             }
 
-            edge->SetEdgeType(newConstraintEdgeType);
-
-            edge->MajorEdge = majorEdge;
-
             Edge.VerifyEdge(edge);
-            UnityEngine.Debug.Log($"SetEdgeTypeMajor, newConstraintEdgeType: {newConstraintEdgeType}, EdgeType before: {existingEdgeType}, EdgeType after: {edge->EdgeType}");
+            UnityEngine.Debug.Log($"SetEdgeTypeMajor, newEdgeType: {newEdgeType}, EdgeType before: {existingEdgeType}, EdgeType after: {edge->EdgeType}");
         }
 
-        internal void SetEdgeTypeMinor(Edge* edge, Edge.Type newConstraintEdgeType, Edge* majorEdge) {
+        internal static void SetEdgeTypeMinor(Edge* edge, Edge.Type newEdgeType, Edge* majorEdge) {
             Edge.Type existingEdgeType = edge->EdgeType;
 
             // Debug: // This might be fine:
             if (edge->MajorEdge != null && majorEdge != null) {
                 UnityEngine.Debug.Assert(edge->MajorEdge == majorEdge || edge->MajorEdge == majorEdge->Sym,
-                $"edge->MajorEdge: {(long)edge->MajorEdge}, majorEdge: {(long)majorEdge}, edge->MajorEdgeType: {edge->MajorEdge->EdgeType}, majorEdge->EdgeType: {majorEdge->EdgeType}");
+                    $"edge->MajorEdge: {(long)edge->MajorEdge}, majorEdge: {(long)majorEdge}, edge->MajorEdgeType: {edge->MajorEdge->EdgeType}, majorEdge->EdgeType: {majorEdge->EdgeType}");
             }
 
-            UnityEngine.Debug.Assert(!Edge.IsEdgeTypeMajor(existingEdgeType) && !Edge.IsEdgeTypeMajor(newConstraintEdgeType), $"edgeType: {existingEdgeType}, newConstraintEdgeType: {newConstraintEdgeType}");
+            UnityEngine.Debug.Assert(!Edge.IsEdgeTypeMajor(existingEdgeType) && !Edge.IsEdgeTypeMajor(newEdgeType), $"edgeType: {existingEdgeType}, newEdgeType: {newEdgeType}");
             
 
             UnityEngine.Debug.Assert(existingEdgeType.HasAnyFlagsB(Edge.Type.Terrain | Edge.Type.TerrainSub | Edge.Type.Obstacle | Edge.Type.Clearance)
-                && newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Terrain | Edge.Type.Obstacle | Edge.Type.Clearance)
-                , $"edgeType: {existingEdgeType}, newConstraintEdgeType: {newConstraintEdgeType}");
+                && newEdgeType.HasAnyFlagsB(Edge.Type.Terrain | Edge.Type.TerrainSub | Edge.Type.Obstacle | Edge.Type.Clearance), $"edgeType: {existingEdgeType}, newEdgeType: {newEdgeType}");
 
             UnityEngine.Debug.Assert(MathLib.LogicalIf(edge->MajorEdge != null, existingEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)));
-            UnityEngine.Debug.Assert(MathLib.LogicalIf(majorEdge != null, newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)));
+            UnityEngine.Debug.Assert(MathLib.LogicalIf(majorEdge != null, newEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)));
 
-            UnityEngine.Debug.Assert(MathLib.LogicalIf(edge->Constrained, newConstraintEdgeType.HasAllFlagsB(Edge.Type.Terrain)));
-            UnityEngine.Debug.Assert(MathLib.LogicalIf(newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance | Edge.Type.TerrainSub), !edge->Constrained));
+            UnityEngine.Debug.Assert(MathLib.LogicalIf(edge->Constrained, newEdgeType.HasAllFlagsB(Edge.Type.Terrain)));
+            UnityEngine.Debug.Assert(MathLib.LogicalIf(newEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance | Edge.Type.TerrainSub), !edge->Constrained));
             
 
-            edge->SetEdgeType(newConstraintEdgeType);
+            edge->SetEdgeType(newEdgeType);
 
-            UnityEngine.Debug.Assert(MathLib.LogicalIf(existingEdgeType.HasAnyFlagsB(Edge.Type.Clearance), newConstraintEdgeType.HasNoFlagsB(Edge.Type.Obstacle))
-                , $"edgeType: {existingEdgeType}, newConstraintEdgeType: {newConstraintEdgeType}, this is probably fine, clearance is often overwritten by obstacle");
+            UnityEngine.Debug.Assert(MathLib.LogicalIf(existingEdgeType.HasAnyFlagsB(Edge.Type.Clearance), newEdgeType.HasNoFlagsB(Edge.Type.Obstacle))
+                , $"edgeType: {existingEdgeType}, newEdgeType: {newEdgeType}, this is probably fine, clearance is often overwritten by obstacle");
 
             edge->MajorEdge = majorEdge;
 
             Edge.VerifyEdge(edge);
-            UnityEngine.Debug.Log($"OverwriteEdgeType, newConstraintEdgeType: {newConstraintEdgeType}, EdgeType before: {existingEdgeType}, EdgeType after: {edge->EdgeType}");
+            UnityEngine.Debug.Log($"SetEdgeTypeMinor, newEdgeType: {newEdgeType}, EdgeType before: {existingEdgeType}, EdgeType after: {edge->EdgeType}");
         }
 
-        internal void OverwriteEdgeType(Edge* edge, Edge.Type newConstraintEdgeType, Edge* majorEdge) {
+        internal static void OverwriteEdgeType(Edge* edge, Edge.Type newConstraintEdgeType, Edge* majorEdge) {
             Edge.Type existingEdgeType = edge->EdgeType;
-
-            // Debug:
-            if (edge->MajorEdge != null && majorEdge != null) {
-                UnityEngine.Debug.Assert(edge->MajorEdge == majorEdge || edge->MajorEdge == majorEdge->Sym,
-                $"edge->MajorEdge: {(long)edge->MajorEdge}, majorEdge: {(long)majorEdge}, edge->MajorEdgeType: {edge->MajorEdge->EdgeType}, majorEdge->EdgeType: {majorEdge->EdgeType}");
-            }
 
             UnityEngine.Debug.Assert(Edge.IsEdgeTypeMajor(existingEdgeType) == Edge.IsEdgeTypeMajor(newConstraintEdgeType), $"edgeType: {existingEdgeType}, newConstraintEdgeType: {newConstraintEdgeType}");
             
@@ -1024,19 +1009,23 @@ namespace DotsNav.Navmesh
                 UnityEngine.Debug.Assert(MathLib.LogicalIf(existingEdgeType.HasAnyFlagsB(Edge.Type.Obstacle), newConstraintEdgeType.HasNoFlagsB(Edge.Type.Clearance))
                     , $"edgeType: {existingEdgeType}, newConstraintEdgeType: {newConstraintEdgeType}"); // Clearance cannot overwrite an Obstacle
 
-
                 SetEdgeTypeMajor(edge, newConstraintEdgeType, majorEdge);
-            } else {                
+
+            } else {
                 if (existingEdgeType.HasAnyFlagsB(Edge.Type.Terrain | Edge.Type.TerrainSub)) {
                     // All overwrite Terrain
                     SetEdgeTypeMinor(edge, newConstraintEdgeType, majorEdge);
                 } else if (existingEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)) {
-                    // Terrain cannot overwrite Obstacle or Clearance, so do nothing
-                    // Also, Obstacle would never try to overwrite Clearance and vice-versa because they would be removed first
+                    if (newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)) {
+                        UnityEngine.Debug.Assert(edge->MajorEdge == majorEdge || edge->MajorEdge == majorEdge->Sym);
+                    } else {
+                        UnityEngine.Debug.Assert(existingEdgeType.HasAnyFlagsB(Edge.Type.Terrain));
+                        UnityEngine.Debug.Assert(edge->MajorEdge != null && majorEdge == null);
+                    }
+                    // Minor Terrain cannot overwrite Minor Obstacle or Clearance, so do nothing
+                    // Also, Minor Obstacle would never try to overwrite Minor Clearance and vice-versa because they would be removed first
                 }
             }
-
-            edge->MajorEdge = majorEdge; // TODO: Keep this?
 
             Edge.VerifyEdge(edge);
             UnityEngine.Debug.Log($"OverwriteEdgeType, newConstraintEdgeType: {newConstraintEdgeType}, EdgeType before: {existingEdgeType}, EdgeType after: {edge->EdgeType}");
@@ -1176,7 +1165,6 @@ namespace DotsNav.Navmesh
 
                 if (lastVert != null && vert != lastVert)
                 {
-                    UnityEngine.Debug.Log("Insert - InsertSegment");
                     InsertSegment(lastVert, vert, cid, newConstraintEdgeType, null);
                     point = null;
                 }
@@ -1201,7 +1189,6 @@ namespace DotsNav.Navmesh
         // NOTE: Point constraints are removed automatically in the Minor graph by RemoveConstraint which will call RemoveVertex
         void RemoveMajorInMinor(Edge* removedMajorEdge)
         {
-            return;
             Assert.IsTrue(removedMajorEdge->Org != null && removedMajorEdge->Dest != null, "Wtf is this?");
             UnityEngine.Debug.Log($"RemoveMajorInMinor; majorEdgeType: {removedMajorEdge->EdgeType}");
             UnityEngine.Debug.Assert(removedMajorEdge->EdgeType.HasAllFlagsB(Edge.Type.Major | Edge.Type.Obstacle) || removedMajorEdge->EdgeType.HasAllFlagsB(Edge.Type.Major | Edge.Type.Clearance)
@@ -1210,7 +1197,7 @@ namespace DotsNav.Navmesh
             _vlist.Clear();
             _elist.Clear();
 
-            if (removedMajorEdge->Org->GetEdge(false) == null || removedMajorEdge->Dest->GetEdge(false) == null) {
+            if (removedMajorEdge->Org->GetEdge(false) == null || removedMajorEdge->Dest->GetEdge(false) == null) { // If no Minor edges attached yet then early-out
                 return;
             }
             Vertex* currentMinorOrg = removedMajorEdge->Org;
@@ -1233,7 +1220,7 @@ namespace DotsNav.Navmesh
                 }
             }
 
-            UnityEngine.Debug.Log("Removing Minor edges that reference this Major edge");
+            UnityEngine.Debug.Log("Resetting Minor edges that reference this Major edge back to Terrain");
 
             Assert.IsTrue(_elist.Length > 0);
 
@@ -1284,7 +1271,8 @@ namespace DotsNav.Navmesh
                     SetEdgeTypeMinor(edge, Edge.Type.Minor | Edge.Type.TerrainSub, null);
 
                     _flipStack.Push(edge);
-                    FlipQuad();
+                    Edge.VerifyEdge(edge, false);
+                    FlipQuad(false);
                 }
 
                 // Old from RemoveConstraint, keeping for reference and because might want V and Refine eventually
@@ -1424,7 +1412,7 @@ namespace DotsNav.Navmesh
 
 
                         _flipStack.Push(edge);
-                        FlipQuad();
+                        FlipQuad(isMajor);
                     }
                     Edge.VerifyEdge(edge, isMajor);
                 }
@@ -1440,7 +1428,7 @@ namespace DotsNav.Navmesh
             if (v->PointConstraints > 0 || v->ConstraintHandles > 0) // If v is a point constraint or if v holds reference to a constraint then don't remove
                 return;
 
-            if (!isMajor && v->GetEdge(true) != null) { // Can't remove Vertex from Minor if there are any Major edges attached
+            if (!isMajor && v->GetEdge(true) != null) { // Can't remove Vertex from Minor if there are any Major edges attached. Major graph will take care of it
                 return;
             }
 
@@ -1557,17 +1545,17 @@ namespace DotsNav.Navmesh
             e1->QuadEdge->Crep.Clear();
             e2->QuadEdge->Crep.Clear();
             if (isMajor) { // TODO: Make this a passed variable
-                e1->SetEdgeType(Edge.Type.Major | Edge.Type.Clearance);
-                e2->SetEdgeType(Edge.Type.Major | Edge.Type.Clearance);
+                SetEdgeTypeMajor(e1, Edge.Type.Major | Edge.Type.Clearance, e1->MajorEdge);
+                SetEdgeTypeMajor(e2, Edge.Type.Major | Edge.Type.Clearance, e2->MajorEdge);
             } else {
-                e1->SetEdgeType(Edge.Type.Major | Edge.Type.TerrainSub);
-                e2->SetEdgeType(Edge.Type.Major | Edge.Type.TerrainSub);
+                SetEdgeTypeMinor(e1, Edge.Type.Minor | Edge.Type.TerrainSub, null);
+                SetEdgeTypeMinor(e2, Edge.Type.Minor | Edge.Type.TerrainSub, null);
             }
             Edge.VerifyEdge(e1, isMajor);
             Edge.VerifyEdge(e2, isMajor);
             _flipStack.Push(e1);
             _flipStack.Push(e2);
-            FlipQuad(); // First satisfy the delaunay of collinear edges then remove the vertex and retriangulate, and finally reinsert the constraint
+            FlipQuad(isMajor); // First satisfy the delaunay of collinear edges then remove the vertex and retriangulate, and finally reinsert the constraint
             var face1 = RemoveVertex(v, isMajor);
             RetriangulateFace(face1, isMajor);
             InsertSegmentNoCrossConstraints(a, b, crep, constraintEdgeType, majorEdge);
@@ -1615,14 +1603,18 @@ namespace DotsNav.Navmesh
             Connect(a, b, crep, newConstraintEdgeType, majorEdge);
         }
 
-        void FlipQuad()
+        void FlipQuad(bool isMajor)
         {
             UnityEngine.Debug.Log("FlipQuad");
             while (_flipStack.Count > 0)
             {
                 var edge = _flipStack.Pop();
 
-                Edge.VerifyEdge(edge);
+                if (Edge.IsEdgeTypeMajor(edge->EdgeType) != isMajor) { // TODO: Hack, should fix this bug better
+                    continue;
+                }
+
+                Edge.VerifyEdge(edge, isMajor);
 
                 bool isSwap = false;
                 if (Edge.IsEdgeTypeMajor(edge->EdgeType)) {
@@ -1716,7 +1708,7 @@ namespace DotsNav.Navmesh
                 _creps.Push(qe->Crep);
             }
 
-            { // Debug:
+            { // Debug so if function tries to access in future will throw null exception:
                 qe->Edge0.Org = null;
                 qe->Edge1.Org = null;
                 qe->Edge2.Org = null;

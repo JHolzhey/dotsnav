@@ -100,8 +100,6 @@ namespace DotsNav.Navmesh.Systems
             _navmeshLookup.Update(ref state);
             _localToWorldLookup.Update(ref state);
             _destroyedTriangleBufferLookup.Update(ref state);
-
-            UnityEngine.Debug.Assert(_insertQuery.CalculateEntityCount() <= 1, "Too many insertions");
             
             foreach (var planeEntity in planeEntities)
             {
@@ -179,11 +177,31 @@ namespace DotsNav.Navmesh.Systems
                 
                 if (!insertIsEmpty)
                 {
-                    /* dependency =  */new InsertJob
-                    {
-                        Data = data,
-                        Buffer = ecb
-                    }.Run(_insertQuery); // .Schedule(_insertQuery, dependency);
+                    // /* dependency =  */new InsertJob
+                    // {
+                        var Data = data;
+                        var Buffer = ecb;
+                    // }.Run(_insertQuery); // .Schedule(_insertQuery, dependency);
+
+                    foreach (var (obstacle, vertices, localToWorld, entity) in SystemAPI.Query<RefRW<NavmeshObstacleComponent>, DynamicBuffer<VertexElement>, RefRO<LocalToWorld>>().WithEntityAccess()) {
+                        // void Execute(Entity entity, in NavmeshObstacleComponent obstacle, in DynamicBuffer<VertexElement> vertices, in LocalToWorld localToWorld)
+                        // {
+                            var navmesh = Data.Value.Navmesh;
+                            var ltw = math.mul(Data.Value.PlaneLtwInv, localToWorld.ValueRO.Value);
+                            Buffer.AddSharedComponent(entity, new CleanUpComponent { Plane = Data.Value.Plane });
+
+                            if (Data.Value.Empty)
+                            {
+                                navmesh->InsertMajor((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
+                            }
+                            else
+                            {
+                                navmesh->C.Clear();
+                                navmesh->InsertMajor((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
+                                navmesh->SearchDisturbances();
+                            }
+                        // }
+                    }
                 }
 
                 if (!insertBulkIsEmpty) 
@@ -402,7 +420,7 @@ namespace DotsNav.Navmesh.Systems
                     // UnityEngine.Debug.Log("OKURRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR");
                     Edge* edge = (Edge*)e;
 
-                    // navmesh->InsertMajorInMinor(edge);
+                    navmesh->InsertMajorInMinor(edge);
                 }
                 navmesh->ModifiedMajorEdges.Clear();
 

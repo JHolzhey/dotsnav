@@ -4,7 +4,6 @@ using DotsNav.Systems;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
-using Unity.Entities.UniversalDelegates;
 using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -58,7 +57,7 @@ namespace DotsNav.Navmesh.Systems
 
                 var enumeratorMinor = navmesh.Navmesh->GetEdgeEnumerator(false);
 
-                while (false && enumeratorMinor.MoveNext())
+                while (true && enumeratorMinor.MoveNext())
                 {
                     var edge = enumeratorMinor.Current;
                     if (edge == null) {

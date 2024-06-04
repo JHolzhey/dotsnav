@@ -156,7 +156,7 @@ namespace DotsNav.Navmesh
                 }
                 // CommonLib.DebugVector(edge->Org->Point.XOY(), edge->Dest->Point.XOY() - edge->Org->Point.XOY(), UnityEngine.Color.white, 0.01f);
 
-                // InsertMajorInMinor(edge);
+                InsertMajorInMinor(edge);
             }
 
             ModifiedMajorEdges.Clear();

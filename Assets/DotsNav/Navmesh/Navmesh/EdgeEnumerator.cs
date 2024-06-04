@@ -23,7 +23,15 @@ namespace DotsNav.Navmesh
             /// Current edge being enumerated.
             /// </summary>
             public Edge* Current => _enumerator.Current;
-            public Vertex* CurrentVertex => (Vertex*) _vertices[_vertexIndex];
+            public Vertex* CurrentVertex { 
+                get {
+                    if (_vertexIndex >= _vertices.Length) {
+                        return (Vertex*) _vertices[_vertexIndex - 1];
+                    } else {
+                        return (Vertex*) _vertices[_vertexIndex];
+                    }
+                }
+            }
 
             readonly float2 _max;
 
@@ -59,7 +67,11 @@ namespace DotsNav.Navmesh
                         _enumerator = ((Vertex*) _vertices[_vertexIndex++])->GetEdgeEnumerator(_isMajor);
                     }
 
-
+                    // TODO: Debug, delete
+                    if (Current == null) {
+                        UnityEngine.Debug.LogError("Current is null");
+                        break;
+                    }
                 } while
                 (
                     math.any(math.max(math.abs(Current->Org->Point), math.abs(Current->Dest->Point)) > _max) ||
