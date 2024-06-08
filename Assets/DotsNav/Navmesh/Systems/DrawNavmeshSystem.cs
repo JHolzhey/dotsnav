@@ -4,6 +4,7 @@ using DotsNav.Systems;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Entities.UniversalDelegates;
 using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -57,13 +58,18 @@ namespace DotsNav.Navmesh.Systems
 
                 var enumeratorMinor = navmesh.Navmesh->GetEdgeEnumerator(false);
 
+                foreach (IntPtr vertex in navmesh.Navmesh->_verticesSeq) {
+                    Vertex* vert = (Vertex*) vertex;
+                    if (vert->GetEdge(false) == null) {
+                        DrawPoint(ref lines, vert->Point, Color.red);
+                        Debug.Assert(false, "Major graph should not contain vertices that Minor graph doesn't have");
+                    }
+                }
+
                 while (true && enumeratorMinor.MoveNext())
                 {
                     var edge = enumeratorMinor.Current;
-                    if (edge == null) {
-                        DrawPoint(ref lines, enumeratorMinor.CurrentVertex->Point, Color.white);
-                        continue;
-                    }
+
                     Debug.Assert(!Edge.IsEdgeTypeMajor(edge->EdgeType), $"edge->EdgeType: {edge->EdgeType}");
 
                     if (data.DrawMode == DrawMode.Constrained && !edge->Constrained)
@@ -76,7 +82,8 @@ namespace DotsNav.Navmesh.Systems
                     var a = math.transform(ltw.Value, edge->Org->Point.ToXxY());
                     var b = math.transform(ltw.Value, edge->Dest->Point.ToXxY());
 
-                    float3 leftOffset = 0.005f * MathLib.CalcTangentToNormal(math.normalizesafe(b - a));
+                    float3 tangent = MathLib.CalcTangentToNormal(math.normalizesafe(b - a));
+                    float3 leftOffset = 0.005f * tangent;
 
                     lines.Add(new Line(a + leftOffset, b + leftOffset, c));
 
@@ -90,19 +97,30 @@ namespace DotsNav.Navmesh.Systems
                         var b_Major = math.transform(ltw.Value, majorEdge->Dest->Point.ToXxY());
                         float3 majorMidpoint = MathLib.Midpoint(a_Major, b_Major);
 
-                        Debug.Assert(MathLib.IsEpsEqual(math.length(minorMidpoint - majorMidpoint), 0.005f, 0.001f), $"Length: {math.length(minorMidpoint - majorMidpoint)}");
+                        float dot = math.dot(tangent, minorMidpoint - majorMidpoint);
+
+                        // if dot too large draw line between
+                        if (!MathLib.IsEpsEqual(dot, 0.005f, 0.001f)) {
+                            Debug.Assert(MathLib.IsEpsEqual(dot, 0.005f, 0.001f), $"Length: {dot}");
+                            lines.Add(new Line(minorMidpoint, majorMidpoint, Color.grey));
+                        }
                     }
                 }
 
                 var enumerator = navmesh.Navmesh->GetEdgeEnumerator(true);
 
+                foreach (IntPtr vertex in navmesh.Navmesh->_verticesSeq) {
+                    Vertex* vert = (Vertex*) vertex;
+                    if (vert->GetEdge(true) == null) {
+                        // This is expected since Minor graph will have Terrain vertices
+                        DrawPoint(ref lines, vert->Point, Color.green);
+                    }
+                }
+
                 while (enumerator.MoveNext())
                 {
                     var edge = enumerator.Current;
-                    if (edge == null) {
-                        DrawPoint(ref lines, enumeratorMinor.CurrentVertex->Point, Color.white);
-                        continue;
-                    }
+
                     Debug.Assert(Edge.IsEdgeTypeMajor(edge->EdgeType), $"edge->EdgeType: {edge->EdgeType}");
 
                     if (data.DrawMode == DrawMode.Constrained && !edge->Constrained)

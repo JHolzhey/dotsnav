@@ -41,7 +41,7 @@ namespace DotsNav.Hybrid
         /// <summary>
         /// Queue insertion of an obstacle in world space
         /// </summary>
-        public ObstacleReference InsertObstacle(IEnumerable<Vector2> vertices, ConstraintType constraintType = ConstraintType.Obstacle)
+        public ObstacleOrTerrainReference InsertObstacle(IEnumerable<Vector2> vertices, ConstraintType constraintType = ConstraintType.Obstacle)
         {
             var em = _world.EntityManager;
             var obstacle = em.CreateEntity();
@@ -52,7 +52,7 @@ namespace DotsNav.Hybrid
                 input.Add(vertex);
             foreach (var component in _components)
                 component.InsertObstacle(em, Entity, obstacle, constraintType);
-            return new ObstacleReference(obstacle);
+            return new ObstacleOrTerrainReference(obstacle);
         }
 
         /// <summary>
@@ -82,7 +82,7 @@ namespace DotsNav.Hybrid
                 component.InsertObstacle(em, Entity, obstacle, ConstraintType.Obstacle);
         }
 
-        public void RemoveObstacle(ObstacleReference toRemove)
+        public void RemoveObstacle(ObstacleOrTerrainReference toRemove)
         {
             _world.EntityManager.DestroyEntity(toRemove.Value);
         }

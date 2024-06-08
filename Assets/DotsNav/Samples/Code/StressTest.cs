@@ -26,7 +26,7 @@ namespace DotsNav.Samples.Code
         public RectTransform Help;
 
         Random _r;
-        readonly List<ObstacleReference> _ids = new();
+        readonly List<ObstacleOrTerrainReference> _ids = new();
         Mode _mode = Mode.Inserting;
         readonly List<Vector2> _points = new();
         float _startTime;

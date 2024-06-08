@@ -30,7 +30,7 @@ class SandboxDev : MonoBehaviour
     public bool Reverse;
 
     readonly List<List<Vector2>> _points = new() {new List<Vector2>()};
-    readonly List<ObstacleReference> _obstacles = new();
+    readonly List<ObstacleOrTerrainReference> _obstacles = new();
 
     int _constraint;
     Vector2 _scrollPos;

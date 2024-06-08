@@ -157,26 +157,26 @@ namespace DotsNav.PathFinding
                 if (!next->Constrained) {
                     float3 org = next->Org->Point.XOY(); float3 dest = next->Dest->Point.XOY(); float3 orgDest =dest - org;
                     float3 leftOffset = MathLib.CalcTangentToNormal(dest - org)*0.05f;
-                    CommonLib.DebugVector(org + leftOffset*0.3f, orgDest, Color.magenta, 0.005f, 0.03f);
+                    // CommonLib.DebugVector(org + leftOffset*0.3f, orgDest, Color.magenta, 0.005f, 0.03f);
 
-                    if (next->Sym->Org->IsSpecial) {
+                    /* if (next->Sym->Org->IsSpecial) {
                         UnityEngine.Debug.Log($"CYAN, ORG - Right cost: {cost}");
-                        CommonLib.DebugVector(org + leftOffset, orgDest, Color.cyan, 0.01f, 0.03f);
-                    }
+                        // CommonLib.DebugVector(org + leftOffset, orgDest, Color.cyan, 0.01f, 0.03f);
+                    } */
 
                     float clearance = next->ClearanceRight;
 
-                    if (next->ONext->Dest->IsSpecial) {
+                    /* if (next->ONext->Dest->IsSpecial) {
                         UnityEngine.Debug.Log($"WHITE, OPREV - Right, cost: {cost}");
-                        CommonLib.DebugVector(org + leftOffset, orgDest, Color.white, 0.01f, 0.03f);
+                        // CommonLib.DebugVector(org + leftOffset, orgDest, Color.white, 0.01f, 0.03f);
                         clearance = float.MaxValue;
-                    }
+                    } */
                     
-                    if (next->Sym->Dest->IsSpecial) { // Sym just makes more sense
-                        CommonLib.DebugVector(org + leftOffset*0.5f, orgDest, Color.red, 0.01f, 0.03f);
+                    /* if (next->Sym->Dest->IsSpecial) { // Sym just makes more sense
+                        // CommonLib.DebugVector(org + leftOffset*0.5f, orgDest, Color.red, 0.01f, 0.03f);
                         UnityEngine.Debug.Log($"RED, DEST - Right: {step.Edge->Dest == next->Sym->Dest}, cost: {cost}");
                         clearance = float.MaxValue;
-                    }
+                    } */
                     Expand(next->Sym /* note the Sym here */, clearance);
                 }
 
@@ -184,27 +184,27 @@ namespace DotsNav.PathFinding
                 if (!next->Constrained) {
                     float3 org = next->Org->Point.XOY(); float3 dest = next->Dest->Point.XOY(); float3 orgDest =dest - org;
                     float3 leftOffset = MathLib.CalcTangentToNormal(dest - org)*0.05f;
-                    CommonLib.DebugVector(org + leftOffset*0.3f, orgDest, Color.magenta, 0.005f, 0.03f);
+                    // CommonLib.DebugVector(org + leftOffset*0.3f, orgDest, Color.magenta, 0.005f, 0.03f);
 
-                    if (next->Dest->IsSpecial) {
+                    /* if (next->Dest->IsSpecial) {
                         UnityEngine.Debug.Log($"YELLOW, DEST - Left, cost: {cost}");
-                        CommonLib.DebugVector(org + leftOffset, orgDest, Color.yellow, 0.01f, 0.03f);
-                    }
+                        // CommonLib.DebugVector(org + leftOffset, orgDest, Color.yellow, 0.01f, 0.03f);
+                    } */
                     // UnityEngine.Debug.Log($"equal: {step.Edge->LNext->Org == next->Dest}");
 
                     float clearance = next->ClearanceLeft;
 
-                    if (next->OPrev->Dest->IsSpecial) {
+                    /* if (next->OPrev->Dest->IsSpecial) {
                         UnityEngine.Debug.Log($"BLACK, ONEXT - Left, cost: {cost}");
-                        CommonLib.DebugVector(org + leftOffset, orgDest, Color.black, 0.01f, 0.03f);
+                        // CommonLib.DebugVector(org + leftOffset, orgDest, Color.black, 0.01f, 0.03f);
                         clearance = float.MaxValue;
-                    }
+                    } */
                     
-                    if (next->Org->IsSpecial) {
+                    /* if (next->Org->IsSpecial) {
                         UnityEngine.Debug.Log($"GREEN, ORG - Left: {step.Edge->Org == next->Org}, cost: {cost}");
-                        CommonLib.DebugVector(org + leftOffset*0.5f, orgDest, Color.green, 0.01f, 0.03f);
+                        // CommonLib.DebugVector(org + leftOffset*0.5f, orgDest, Color.green, 0.01f, 0.03f);
                         clearance = float.MaxValue;
-                    }
+                    } */
                     Expand(next, clearance);
                 }
 

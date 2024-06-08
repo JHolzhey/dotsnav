@@ -19,27 +19,25 @@ namespace DotsNav.Navmesh
         /// </summary>
         public float2 Point { get; internal set; }
 
-        Edge* Edge;
+        Edge* MajorEdge;
+        Edge* MinorEdge;
         public Type VertexType { // TODO: Make this branchless somehow
             get {
                 Type thisType = Type.None;
-                if (Edge != null) { thisType |= Type.Major; }
+                if (MajorEdge != null) { thisType |= Type.Major; }
                 if (MinorEdge != null) { thisType |= Type.Minor; }
                 return thisType;
             }
         }
-        Edge* MinorEdge;
 
         // internal void HackyDisconnectMinorEdge() => MinorEdge = null;
 
 
-        internal Edge* GetEdge(bool isMajor) => isMajor ? Edge : MinorEdge;
+        internal Edge* GetEdge(bool isMajor) => isMajor ? MajorEdge : MinorEdge;
         internal int SeqPos;
         internal int Mark; // Used when potentially removing Constraint Vertices (depth-first search), to mark already visited Vertices // TODO: I don't think this is true
         internal int PointConstraints;
         internal int ConstraintHandles;
-
-        public bool IsSpecial;
 
         /// <summary>
         /// Allows for the enumeration of all edges that share this vertex as their origin:
@@ -64,7 +62,7 @@ namespace DotsNav.Navmesh
         internal void RemoveEdge(Edge* e, bool isMajor) {
             DotsNav.Navmesh.Edge.VerifyEdge(e, isMajor);
             if (isMajor) {
-                Edge = e->ONext == e ? null : e->ONext;
+                MajorEdge = e->ONext == e ? null : e->ONext;
             } else {
                 MinorEdge = e->ONext == e ? null : e->ONext;
             }
@@ -72,7 +70,7 @@ namespace DotsNav.Navmesh
         internal void AddEdge(Edge* e, bool isMajor) {
             DotsNav.Navmesh.Edge.VerifyEdgeType(e->EdgeType, isMajor);
             if (isMajor) {
-                Edge = e;
+                MajorEdge = e;
             } else {
                 MinorEdge = e;
             }
@@ -99,7 +97,7 @@ namespace DotsNav.Navmesh
             {
                 Assert.IsTrue(v != null);
                 _debugIsMajor = isMajor;
-                _start = isMajor ? v->Edge : v->MinorEdge;
+                _start = isMajor ? v->MajorEdge : v->MinorEdge;
                 _started = false;
                 Current = null;
             }

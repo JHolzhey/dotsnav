@@ -308,6 +308,7 @@ namespace DotsNav.Navmesh
             var e = C.GetEnumerator();
             while (e.MoveNext())
             {
+                Edge.VerifyEdge((Edge*) e.Current, true);
                 var s = (Edge*) e.Current;
                 Propagate(s, s);
                 Propagate(s, s->Sym);
@@ -378,15 +379,19 @@ namespace DotsNav.Navmesh
         internal void RemoveRefinements()
         {
             var i = V.GetEnumerator();
-            while (i.MoveNext())
-                RemoveIfEligible((Vertex*) i.Current, true, Edge.Type.Major | Edge.Type.Obstacle);
+            while (i.MoveNext()) {
+                UnityEngine.Debug.Assert(((Vertex*)i.Current)->VertexType.HasAllFlagsB(Vertex.Type.Major));
+                RemoveVertexIfEligible((Vertex*) i.Current, true, Edge.Type.Major | Edge.Type.Obstacle);
+            }
         }
 
         internal void LocalRefinement()
         {
             var verts = V.GetEnumerator();
-            while (verts.MoveNext())
+            while (verts.MoveNext()) {
+                UnityEngine.Debug.Assert(((Vertex*)verts.Current)->VertexType.HasAllFlagsB(Vertex.Type.Major), "Only able to refine Major graph");
                 _refinementQueue.PushBack(verts.Current);
+            }
 
             InfiniteLoopDetection.Reset();
             while (_refinementQueue.Count > 0)
@@ -452,7 +457,7 @@ namespace DotsNav.Navmesh
                 var c = edge->Dest->Point;
                 if (CheckTraversal(a, b, c, edge, true, out var disturbance))
                 {
-                    vRef = InsertPointInEdge(disturbance.PRef, disturbance.Edge, Edge.Type.Major | Edge.Type.Obstacle);
+                    vRef = InsertPointInEdge(disturbance.PRef, disturbance.Edge, Edge.Type.Major | Edge.Type.Obstacle, false);
                     return true;
                 }
             }
@@ -472,7 +477,7 @@ namespace DotsNav.Navmesh
                 var c = edge->Dest->Point;
                 if (CheckTraversal(a, b, c, edge, false, out var disturbance))
                 {
-                    vRef = InsertPointInEdge(disturbance.PRef, disturbance.Edge, Edge.Type.Major | Edge.Type.Obstacle);
+                    vRef = InsertPointInEdge(disturbance.PRef, disturbance.Edge, Edge.Type.Major | Edge.Type.Obstacle, false);
                     return true;
                 }
             }
@@ -537,7 +542,7 @@ namespace DotsNav.Navmesh
         internal void GlobalRefine()
         {
             var disturbances = new NativeList<Disturbance>(Allocator.Temp);
-            var e = GetEdgeEnumerator(true, true); // TODO: True
+            var e = GetEdgeEnumerator(true, true); // True for now because only refining major edges
             while (e.MoveNext())
                 if (!e.Current->Constrained)
                     CheckEdgeForDisturbances(e.Current, disturbances);

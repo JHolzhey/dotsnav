@@ -6,7 +6,6 @@ using Unity.Entities;
 namespace DotsNav.Navmesh.Systems
 {
     [UpdateInGroup(typeof(DotsNavSystemGroup), OrderFirst = true)]
-    [AlwaysUpdateSystem]
     unsafe partial class NavmeshResourcesSystem : SystemBase
     {
         protected override void OnUpdate()

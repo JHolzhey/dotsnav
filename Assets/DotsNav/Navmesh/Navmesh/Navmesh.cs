@@ -25,7 +25,7 @@ namespace DotsNav.Navmesh
         UnsafeParallelHashMap<Entity, IntPtr> _constraints;
         BlockPool<Vertex> _vertices;
         BlockPool<QuadEdge> _quadEdges;
-        UnsafeList<IntPtr> _verticesSeq;
+        internal UnsafeList<IntPtr> _verticesSeq; // Accessible for debug
 
         internal HashSet<IntPtr> V; // All vertices adjacent to modified edges
         internal HashSet<IntPtr> C; // All edges constrained during insertion
@@ -37,6 +37,8 @@ namespace DotsNav.Navmesh
         PtrStack<Vertex> _open;
         UnsafeList<IntPtr> _vlist;
         UnsafeList<IntPtr> _elist;
+        UnsafeList<IntPtr> _vlistMinor;
+        UnsafeList<IntPtr> _elistMinor;
         Stack<UnsafeList<Entity>> _creps;
         internal HashSet<int> DestroyedTriangles;
         Deque<IntPtr> _refinementQueue;
@@ -76,6 +78,8 @@ namespace DotsNav.Navmesh
             _open = new PtrStack<Vertex>(64, Allocator.Persistent);
             _vlist = new UnsafeList<IntPtr>(64, Allocator.Persistent);
             _elist = new UnsafeList<IntPtr>(64, Allocator.Persistent);
+            _vlistMinor = new UnsafeList<IntPtr>(64, Allocator.Persistent);
+            _elistMinor = new UnsafeList<IntPtr>(64, Allocator.Persistent);
             _creps = new Stack<UnsafeList<Entity>>(2*component.ExpectedVerts, Allocator.Persistent);
             for (int i = 0; i < 2 * component.ExpectedVerts; i++)
                 _creps.Push(new UnsafeList<Entity>(CrepMinCapacity, Allocator.Persistent));
@@ -145,7 +149,7 @@ namespace DotsNav.Navmesh
             UnityEngine.Debug.Log($"Starting insert: =======================================================================================");
 
             var bounds = stackalloc float2[] {-Extent, new float2(Extent.x, -Extent.y), Extent, new float2(-Extent.x, Extent.y), -Extent};
-            InsertMajor(bounds, 0, 5, Entity.Null, float4x4.identity);
+            InsertMajor(bounds, 0, 5, Entity.Null, float4x4.identity, Edge.Type.Obstacle);
 
             UnityEngine.Debug.Log($"_modifiedMajorEdges.Length: {ModifiedMajorEdges.Length} =======================================================================================");
             foreach (IntPtr e in ModifiedMajorEdges) {

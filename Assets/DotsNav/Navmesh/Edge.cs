@@ -59,7 +59,7 @@ namespace DotsNav.Navmesh
                 UnityEngine.Debug.Assert(MathLib.LogicalIf(e->EdgeType.HasAnyFlagsB(Type.Terrain), e->Constrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->Constrained}");
                 if (e->EdgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance)) {
                     UnityEngine.Debug.Assert(e->MajorEdge != null, "Minor Obstaces and Clearances must have Major edges");
-                    if (e->MajorEdge != null) {
+                    if (e->MajorEdge != null) { // This is just to prevent null exception
                         UnityEngine.Debug.Assert((e->EdgeType & ~ Type.Minor) == (e->MajorEdge->EdgeType & ~Type.Major), $"e->EdgeType: {e->EdgeType}, e->MajorEdge->EdgeType: {e->MajorEdge->EdgeType}");
                     }
                 }
@@ -168,7 +168,7 @@ namespace DotsNav.Navmesh
         public bool IsConstrainedBy(Entity id) => QuadEdge->Crep.Contains(id);
         public bool ConstraintsEqual(Edge* edge) => EdgeType == edge->EdgeType && QuadEdge->Crep.SequenceEqual(edge->QuadEdge->Crep);
 
-        internal void AddConstraint(Entity id) { if (id.Index != int.MinValue) { QuadEdge->Crep.InsertSorted(id); } else { UnityEngine.Debug.Log("Not adding Major Constraint"); } }
+        internal void AddConstraint(Entity id) { if (id.Index != int.MinValue) { QuadEdge->Crep.InsertSorted(id); } } // else { UnityEngine.Debug.Log("Not adding Major Constraint"); } }
         internal void RemoveConstraint(Entity id) => QuadEdge->Crep.Remove(id);
 
         /// <summary>
@@ -184,7 +184,7 @@ namespace DotsNav.Navmesh
         /// <summary>
         /// Returns the dual-edge pointing from left to right.
         /// </summary>
-        Edge* InvRot => GetEdge((_indexInQuadEdge + 3) & 3);
+        internal Edge* InvRot => GetEdge((_indexInQuadEdge + 3) & 3); // Internal for Debug sake
 
         Edge* GetEdge(int i) => (Edge*) ((byte*) QuadEdge + i * sizeof(Edge));
 

@@ -1,6 +1,7 @@
 using DotsNav.Collections;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Entities.UniversalDelegates;
 using Unity.Mathematics;
 
 namespace DotsNav.Navmesh
@@ -76,9 +77,11 @@ namespace DotsNav.Navmesh
                 }
             }
 
-            UnityEngine.Debug.Assert(closest->VertexType.HasAnyFlagsB(vertexType));
-            UnityEngine.Debug.Assert((vertexType == Vertex.Type.Minor && closest->GetEdge(false) != null)
-                || (vertexType == Vertex.Type.Major && closest->GetEdge(true) != null));
+            if (closest != null) {
+                UnityEngine.Debug.Assert(closest->VertexType.HasAnyFlagsB(vertexType), $"vertexType: {vertexType}, closest->VertexType: {closest->VertexType}");
+                UnityEngine.Debug.Assert((vertexType == Vertex.Type.Minor && closest->GetEdge(false) != null)
+                    || (vertexType == Vertex.Type.Major && closest->GetEdge(true) != null), $"vertexType: {vertexType}, closest->VertexType: {closest->VertexType}");
+            }
             return closest;
         }
 

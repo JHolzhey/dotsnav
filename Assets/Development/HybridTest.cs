@@ -8,7 +8,7 @@ class HybridTest : MonoBehaviour
     public DotsNavRunner UpdateMode;
     public DotsNavPlane Plane;
     public DotsNavPathFindingAgent Agent;
-    ObstacleReference _id;
+    ObstacleOrTerrainReference _id;
     public DotsNavObstacle ObstaclePrefab;
 
     void Update()
