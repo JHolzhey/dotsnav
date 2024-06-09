@@ -48,8 +48,8 @@ namespace DotsNav.CollisionDetection
         {
             var o = segmentCast.Origin;
             var d = segmentCast.Destination;
-            var tri = navmesh.FindTriangleContainingPoint(o, out var startCollinear);
-            var goalEdge = navmesh.FindTriangleContainingPoint(d, out var goalCollinear);
+            var tri = navmesh.FindTriangleContainingPoint(o, false, out var startCollinear);
+            var goalEdge = navmesh.FindTriangleContainingPoint(d, false, out var goalCollinear);
 
             if (ReachedGoal(tri) || startCollinear && ReachedGoal(tri->Sym))
             {

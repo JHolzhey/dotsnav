@@ -30,8 +30,6 @@ namespace DotsNav.Navmesh
             }
         }
 
-        // internal void HackyDisconnectMinorEdge() => MinorEdge = null;
-
 
         internal Edge* GetEdge(bool isMajor) => isMajor ? MajorEdge : MinorEdge;
         internal int SeqPos;

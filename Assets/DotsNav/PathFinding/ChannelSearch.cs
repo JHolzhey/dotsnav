@@ -48,12 +48,12 @@ namespace DotsNav.PathFinding
             if (!navmesh->Contains(goal))
                 return PathQueryState.GoalInvalid;
 
-            var startEdge = navmesh->FindTriangleContainingPoint(start);
+            var startEdge = navmesh->FindTriangleContainingPoint(start, false);
             if (!EndpointValid(start, radius, startEdge))
                 return PathQueryState.StartInvalid;
             var startId = startEdge->TriangleId;
 
-            var goalEdge = navmesh->FindTriangleContainingPoint(goal);
+            var goalEdge = navmesh->FindTriangleContainingPoint(goal, false);
             if (!EndpointValid(goal, radius, goalEdge))
                 return PathQueryState.GoalInvalid;
             var goalId = goalEdge->TriangleId;
@@ -440,19 +440,21 @@ namespace DotsNav.PathFinding
 
         static bool EndpointValid(float2 p, float r, Edge* tri)
         {
-            return EndpointValidRecursive(p, r, tri->Sym) &&
-                   EndpointValidRecursive(p, r, tri->LNext->Sym) &&
-                   EndpointValidRecursive(p, r, tri->LPrev->Sym);
+            return EndpointValidRecursive(p, r, tri->Sym, tri->Sym, 0) &&
+                   EndpointValidRecursive(p, r, tri->LNext->Sym, tri->LNext->Sym, 0) &&
+                   EndpointValidRecursive(p, r, tri->LPrev->Sym, tri->LPrev->Sym, 0);
         }
 
-        static bool EndpointValidRecursive(float2 p, float r, Edge* tri)
+        static bool EndpointValidRecursive(float2 p, float r, Edge* tri, Edge* startingTri, int depth)
         {
-            return Math.IntersectSegCircle(tri->Org->Point, tri->Dest->Point, p, r) == 0 &&
-                   math.length(p - tri->Org->Point) > r &&
-                   math.length(p - tri->Dest->Point) > r ||
-                   !tri->Constrained &&
-                   EndpointValidRecursive(p, r, tri->LNext->Sym) &&
-                   EndpointValidRecursive(p, r, tri->LPrev->Sym);
+            return (depth > 0 && tri == startingTri)
+                || (Math.IntersectSegCircle(tri->Org->Point, tri->Dest->Point, p, r) == 0
+                && math.length(p - tri->Org->Point) > r
+                && math.length(p - tri->Dest->Point) > r)
+                //||  !tri->Constrained &&
+                || (!tri->EdgeType.HasAllFlagsB(Edge.Type.Obstacle)
+                && EndpointValidRecursive(p, r, tri->LNext->Sym, startingTri, depth + 1)
+                && EndpointValidRecursive(p, r, tri->LPrev->Sym, startingTri, depth + 1));
         }
 
         static Quad TransformRect(float2 translation, float2 size, float angle)

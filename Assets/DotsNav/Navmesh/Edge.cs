@@ -38,6 +38,26 @@ namespace DotsNav.Navmesh
         internal void SetEdgeType(Type fixedEdgeType) {
             QuadEdge->EdgeType = fixedEdgeType;
         }
+
+        public unsafe bool IsMajorTypeConstrained() {
+            UnityEngine.Debug.Assert(EdgeType.HasAnyFlagsB(Type.Major));
+            return EdgeType.HasAnyFlagsB(Type.Obstacle);
+        }
+        public unsafe bool IsMinorTypeConstrained() {
+            UnityEngine.Debug.Assert(EdgeType.HasAnyFlagsB(Type.Minor));
+            return EdgeType.HasAnyFlagsB(Type.Terrain | Type.Obstacle | Type.Clearance);
+        }
+
+
+        public unsafe bool IsTypeConstrained() {
+            VerifyEdgeType(EdgeType);
+            if (IsEdgeTypeMajor(EdgeType)) {
+                return IsMajorTypeConstrained();
+            } else {
+                return IsMinorTypeConstrained();
+            }
+        }
+
         public static unsafe bool IsEdgeTypeMajor(Type edgeType) {
             UnityEngine.Debug.Assert((edgeType.HasAnyFlagsB(Type.Major) && edgeType.HasNoFlagsB(Type.Minor))
                 || (edgeType.HasNoFlagsB(Type.Major) && edgeType.HasAnyFlagsB(Type.Minor)), $"EdgeType: {edgeType}"); // Edge type must be either Major or Minor, cannot be both
@@ -45,6 +65,7 @@ namespace DotsNav.Navmesh
         }
 
         // TODO: Make conditional
+        public static unsafe void VerifyEdgeType(Type edgeType) => VerifyEdgeType(edgeType, IsEdgeTypeMajor(edgeType));
         public static unsafe void VerifyEdgeType(Type edgeType, bool isMajor) {
             UnityEngine.Debug.Assert((isMajor && edgeType.HasAnyFlagsB(Type.Major) && edgeType.HasNoFlagsB(Type.Minor) && edgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance))
                 || (!isMajor && edgeType.HasAnyFlagsB(Type.Minor) && edgeType.HasNoFlagsB(Type.Major) && edgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance | Type.Terrain | Type.TerrainSub))
@@ -53,10 +74,10 @@ namespace DotsNav.Navmesh
 
         public static unsafe void VerifyEdge(Edge* e) {
             if (IsEdgeTypeMajor(e->EdgeType)) {
-                UnityEngine.Debug.Assert(MathLib.LogicalIf(e->EdgeType.HasAnyFlagsB(Type.Obstacle), e->Constrained) && MathLib.LogicalIf(e->Constrained, e->EdgeType.HasAnyFlagsB(Type.Obstacle)),
-                    $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->Constrained}");
+                UnityEngine.Debug.Assert(MathLib.LogicalIff(e->EdgeType.HasAnyFlagsB(Type.Obstacle), e->Constrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->Constrained}");
             } else {
-                UnityEngine.Debug.Assert(MathLib.LogicalIf(e->EdgeType.HasAnyFlagsB(Type.Terrain), e->Constrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->Constrained}");
+                UnityEngine.Debug.Assert(MathLib.LogicalIff(e->EdgeType.HasAnyFlagsB(Type.Terrain), e->Constrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->Constrained}");
+
                 if (e->EdgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance)) {
                     UnityEngine.Debug.Assert(e->MajorEdge != null, "Minor Obstaces and Clearances must have Major edges");
                     if (e->MajorEdge != null) { // This is just to prevent null exception

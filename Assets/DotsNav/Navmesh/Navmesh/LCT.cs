@@ -7,6 +7,9 @@ namespace DotsNav.Navmesh
     {
         internal static void ResetClearance(Edge* s)
         {
+            if (!Edge.IsEdgeTypeMajor(s->EdgeType)) {
+                return;
+            }
             var perp = Math.PerpCcw(s->Dest->Point - s->Org->Point);
             var o = s->Org->Point;
             var d = s->Dest->Point;
@@ -381,7 +384,7 @@ namespace DotsNav.Navmesh
             var i = V.GetEnumerator();
             while (i.MoveNext()) {
                 UnityEngine.Debug.Assert(((Vertex*)i.Current)->VertexType.HasAllFlagsB(Vertex.Type.Major));
-                RemoveVertexIfEligible((Vertex*) i.Current, true, Edge.Type.Major | Edge.Type.Obstacle);
+                RemoveVertexIfEligible((Vertex*) i.Current, true);
             }
         }
 

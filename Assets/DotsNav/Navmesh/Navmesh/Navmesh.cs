@@ -33,6 +33,7 @@ namespace DotsNav.Navmesh
         QuadTree _qt;
         EdgeSearch _edgeSearch;
         PtrStack<Edge> _flipStack;
+        PtrStack<Edge> _flipStackMinor;
         UnsafeList<Point> _insertedPoints;
         PtrStack<Vertex> _open;
         UnsafeList<IntPtr> _vlist;
@@ -44,6 +45,8 @@ namespace DotsNav.Navmesh
         Deque<IntPtr> _refinementQueue;
 
         internal HashSet<IntPtr> ModifiedMajorEdges;
+
+        internal readonly static Entity MinorObstacleEntity = new Entity{Index = int.MinValue, Version = int.MinValue};
 
         int _mark;
         int _edgeId;
@@ -74,6 +77,7 @@ namespace DotsNav.Navmesh
             _edgeSearch = new EdgeSearch(100, 100, Allocator.Persistent);
             _qt = new QuadTree(math.max(component.Size.x, component.Size.y), 100, 10, Allocator.Persistent);
             _flipStack = new PtrStack<Edge>(32, Allocator.Persistent);
+            _flipStackMinor = new PtrStack<Edge>(32, Allocator.Persistent);
             _insertedPoints = new UnsafeList<Point>(64, Allocator.Persistent);
             _open = new PtrStack<Vertex>(64, Allocator.Persistent);
             _vlist = new UnsafeList<IntPtr>(64, Allocator.Persistent);
@@ -130,10 +134,10 @@ namespace DotsNav.Navmesh
             var topMinor = CreateEdge(topRight, topleft, Edge.Type.Minor | Edge.Type.Obstacle, top);
             var leftMinor = CreateEdge(topleft, bottomLeft, Edge.Type.Minor | Edge.Type.Obstacle, left);
 
-            bottomMinor->AddConstraint(Entity.Null);
-            rightMinor->AddConstraint(Entity.Null);
-            topMinor->AddConstraint(Entity.Null);
-            leftMinor->AddConstraint(Entity.Null);
+            bottomMinor->AddConstraint(MinorObstacleEntity); // Could also just not Add a Constraint
+            rightMinor->AddConstraint(MinorObstacleEntity);
+            topMinor->AddConstraint(MinorObstacleEntity);
+            leftMinor->AddConstraint(MinorObstacleEntity);
 
             Splice(bottomMinor->Sym, rightMinor);
             Splice(rightMinor->Sym, topMinor);

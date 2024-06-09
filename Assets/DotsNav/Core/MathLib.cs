@@ -157,6 +157,8 @@ public static class MathLib
 
     ///! returns true if not first
     public static bool LogicalIf(bool first, bool second) => !(first && !second);
+
+    public static bool LogicalIff(bool first, bool second) => first == second;
     
 //     public unsafe static bool DebugCheckNull(void* data) {
 // #if UNITY_ASSERTIONS

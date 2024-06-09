@@ -48,7 +48,7 @@ namespace DotsNav.CollisionDetection
         {
             var o = discCast.Origin;
             var r = discCast.Radius;
-            var tri = navmesh.FindTriangleContainingPoint(o);
+            var tri = navmesh.FindTriangleContainingPoint(o, false);
 
             open.Clear();
             closed.Clear();
