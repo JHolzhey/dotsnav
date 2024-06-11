@@ -6,6 +6,7 @@ using DotsNav.Navmesh;
 using DotsNav.PathFinding.Data;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Entities.UniversalDelegates;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -48,12 +49,12 @@ namespace DotsNav.PathFinding
             if (!navmesh->Contains(goal))
                 return PathQueryState.GoalInvalid;
 
-            var startEdge = navmesh->FindTriangleContainingPoint(start, false);
+            navmesh->FindTriangleContainingPoint(start, out Edge* startEdge, out Edge* startEdgeMajor);
             if (!EndpointValid(start, radius, startEdge))
                 return PathQueryState.StartInvalid;
             var startId = startEdge->TriangleId;
 
-            var goalEdge = navmesh->FindTriangleContainingPoint(goal, false);
+            navmesh->FindTriangleContainingPoint(goal, out Edge* goalEdge, out Edge* goalEdgeMajor);
             if (!EndpointValid(goal, radius, goalEdge))
                 return PathQueryState.GoalInvalid;
             var goalId = goalEdge->TriangleId;
@@ -117,6 +118,7 @@ namespace DotsNav.PathFinding
             ExpandInitial(startEdge->Sym);
             ExpandInitial(startEdge->LNext->Sym);
             ExpandInitial(startEdge->LPrev->Sym);
+            
             closed.TryAdd(startId);
             closed.TryAdd(goalId);
 
@@ -131,18 +133,24 @@ namespace DotsNav.PathFinding
 
                     while (step.Previous != -1)
                     {
-                        path.Add(new Gate {Left = step.Edge->Org->Point, Right = step.Edge->Dest->Point});
-                        triangleIds.Add(step.Edge->TriangleId);
+                        if (!step.IsGateIgnored) {
+                            path.Add(new Gate {Left = step.Edge->GetMajorEdgeSameDir()->Org->Point, Right = step.Edge->GetMajorEdgeSameDir()->Dest->Point});
+                            triangleIds.Add(step.Edge->TriangleId);
+                        }
                         step = steps[step.Previous];
                     }
+                    if (!step.IsGateIgnored) {
+                        path.Add(new Gate {Left = step.Edge->GetMajorEdgeSameDir()->Org->Point, Right = step.Edge->GetMajorEdgeSameDir()->Dest->Point});
+                        triangleIds.Add(step.Edge->TriangleId);
+                    }
 
-                    path.Add(new Gate {Left = step.Edge->Org->Point, Right = step.Edge->Dest->Point});
-                    triangleIds.Add(step.Edge->TriangleId);
                     triangleIds.Add(startId);
 
-                    AddEndpointEdges(goal, e, true);
+
+                    // AddEndpointEdges(goal, e, true);
+
                     e = step.Edge->TriangleId == startId ? step.Edge : step.Edge->Sym;
-                    AddEndpointEdges(start, e, false);
+                    // AddEndpointEdges(start, e, false);
 
                     path.Reverse();
                     return PathQueryState.PathFound;
@@ -151,62 +159,24 @@ namespace DotsNav.PathFinding
                 closed.TryAdd(id);
 
 
-                // TODO: IsSpecial could just be check if ConstraintHandles == 0 instead
-
                 var next = step.Edge->LNext;
-                if (!next->Constrained) {
-                    float3 org = next->Org->Point.XOY(); float3 dest = next->Dest->Point.XOY(); float3 orgDest =dest - org;
-                    float3 leftOffset = MathLib.CalcTangentToNormal(dest - org)*0.05f;
-                    // CommonLib.DebugVector(org + leftOffset*0.3f, orgDest, Color.magenta, 0.005f, 0.03f);
-
-                    /* if (next->Sym->Org->IsSpecial) {
-                        UnityEngine.Debug.Log($"CYAN, ORG - Right cost: {cost}");
-                        // CommonLib.DebugVector(org + leftOffset, orgDest, Color.cyan, 0.01f, 0.03f);
-                    } */
-
-                    float clearance = next->ClearanceRight;
-
-                    /* if (next->ONext->Dest->IsSpecial) {
-                        UnityEngine.Debug.Log($"WHITE, OPREV - Right, cost: {cost}");
-                        // CommonLib.DebugVector(org + leftOffset, orgDest, Color.white, 0.01f, 0.03f);
-                        clearance = float.MaxValue;
-                    } */
-                    
-                    /* if (next->Sym->Dest->IsSpecial) { // Sym just makes more sense
-                        // CommonLib.DebugVector(org + leftOffset*0.5f, orgDest, Color.red, 0.01f, 0.03f);
-                        UnityEngine.Debug.Log($"RED, DEST - Right: {step.Edge->Dest == next->Sym->Dest}, cost: {cost}");
-                        clearance = float.MaxValue;
-                    } */
-                    Expand(next->Sym /* note the Sym here */, clearance);
+                float clearanceRight = -1;
+                if (next->IsClearance) {
+                    clearanceRight = next->GetMajorEdgeSameDir()->ClearanceRight;
+                } else if (!next->IsObstacle) {
+                    clearanceRight = float.MaxValue;
                 }
+                Expand(next->Sym /* note the Sym here */, clearanceRight);
 
                 next = step.Edge->LPrev->Sym;
-                if (!next->Constrained) {
-                    float3 org = next->Org->Point.XOY(); float3 dest = next->Dest->Point.XOY(); float3 orgDest =dest - org;
-                    float3 leftOffset = MathLib.CalcTangentToNormal(dest - org)*0.05f;
-                    // CommonLib.DebugVector(org + leftOffset*0.3f, orgDest, Color.magenta, 0.005f, 0.03f);
-
-                    /* if (next->Dest->IsSpecial) {
-                        UnityEngine.Debug.Log($"YELLOW, DEST - Left, cost: {cost}");
-                        // CommonLib.DebugVector(org + leftOffset, orgDest, Color.yellow, 0.01f, 0.03f);
-                    } */
-                    // UnityEngine.Debug.Log($"equal: {step.Edge->LNext->Org == next->Dest}");
-
-                    float clearance = next->ClearanceLeft;
-
-                    /* if (next->OPrev->Dest->IsSpecial) {
-                        UnityEngine.Debug.Log($"BLACK, ONEXT - Left, cost: {cost}");
-                        // CommonLib.DebugVector(org + leftOffset, orgDest, Color.black, 0.01f, 0.03f);
-                        clearance = float.MaxValue;
-                    } */
-                    
-                    /* if (next->Org->IsSpecial) {
-                        UnityEngine.Debug.Log($"GREEN, ORG - Left: {step.Edge->Org == next->Org}, cost: {cost}");
-                        // CommonLib.DebugVector(org + leftOffset*0.5f, orgDest, Color.green, 0.01f, 0.03f);
-                        clearance = float.MaxValue;
-                    } */
-                    Expand(next, clearance);
+                float clearanceLeft = -1;
+                if (next->IsClearance) {
+                    clearanceLeft = next->GetMajorEdgeSameDir()->ClearanceLeft;
+                } else if (!next->IsObstacle) {
+                    clearanceLeft = float.MaxValue;
                 }
+                Expand(next, clearanceLeft);
+
 
                 ++cost;
 
@@ -230,7 +200,8 @@ namespace DotsNav.PathFinding
                         step.G + C(step.ReferencePoint, edge, out var referencePoint),
                         H(referencePoint, goal),
                         step.StepId,
-                        referencePoint
+                        referencePoint,
+                        !edge->IsClearance // TODO
                     );
 
                     steps.Add(newStep);
@@ -316,17 +287,17 @@ namespace DotsNav.PathFinding
 
                 void ValidEdge(Edge* e)
                 {
-                    if (!e->Constrained && !EndpointDisturbed(e, goal))
+                    if (!e->IsObstacle && !(e->HasMajorEdge && EndpointDisturbed(e->GetMajorEdgeSameDir(), goal))) // TODO: EndpointDisturbed edge may be different from whats expected from Major edge
                         valid.Add(e->QuadEdgeId);
                 }
             }
 
             void ExpandInitial(Edge* edge)
             {
-                if (edge->Constrained || edge->TriangleId == goalId && !validGoalEdges.Contains(edge->QuadEdgeId))
+                if (edge->IsObstacle || edge->TriangleId == goalId && !validGoalEdges.Contains(edge->QuadEdgeId))
                     return;
 
-                if (EndpointDisturbed(edge->Sym, start))
+                if (edge->HasMajorEdge && EndpointDisturbed(edge->GetMajorEdgeSameDir()->Sym, start)) // TODO: EndpointDisturbed edge may be different from whats expected from Major edge
                     return;
 
                 var newStep = new Step
@@ -336,40 +307,42 @@ namespace DotsNav.PathFinding
                     C(start, edge, out var referencePoint),
                     H(referencePoint, goal),
                     -1,
-                    referencePoint
+                    referencePoint,
+                    !edge->IsClearance // TODO
                 );
 
                 steps.Add(newStep);
                 open.Insert(newStep);
             }
 
-            bool EndpointDisturbed(Edge* edge, float2 endpoint)
+            bool EndpointDisturbed(Edge* edgeMajor, float2 endpoint) // TODO: Change parameter name to edgeMajor
             {
                 var q = new Quad
                 {
-                    A = edge->Org->Point,
-                    B = edge->Dest->Point,
-                    C = Math.GetTangentRight(edge->Dest->Point, endpoint, radius),
-                    D = Math.GetTangentLeft(edge->Org->Point, endpoint, radius)
+                    A = edgeMajor->Org->Point,
+                    B = edgeMajor->Dest->Point,
+                    C = Math.GetTangentRight(edgeMajor->Dest->Point, endpoint, radius),
+                    D = Math.GetTangentLeft(edgeMajor->Org->Point, endpoint, radius)
                 };
                 verts.Clear();
-                ob.VerticesInQuad(q, edge, verts);
+                ob.VerticesInQuad(q, edgeMajor, verts);
                 for (int i = 0; i < verts.Length; i++)
                 {
                     var v = verts[i];
                     var p = v.Vertex->Point;
-                    if (CheckForDisturbance(p, endpoint, (edge->Org->Point + edge->Dest->Point) / 2, out _, edge, diameter))
+                    if (CheckForDisturbance(p, endpoint, (edgeMajor->Org->Point + edgeMajor->Dest->Point) / 2, out _, edgeMajor, diameter))
                         return true;
                 }
 
                 return false;
             }
 
+            // TODO: Use lengthsq instead?
             float C(float2 from, Edge* edge, out float2 referencePoint)
             {
                 var o = edge->Org->Point;
                 var d = edge->Dest->Point;
-                var od = d - o;
+                var od = d - o; // Same as SegVector
                 var offset = math.normalize(od) * radius;
                 o += offset;
                 d -= offset;
@@ -438,7 +411,7 @@ namespace DotsNav.PathFinding
             DebugDraw(q.D, q.A, color);
         }
 
-        static bool EndpointValid(float2 p, float r, Edge* tri)
+        static bool EndpointValid(float2 p, float r, Edge* tri) // TODO: Check if either Org or Dest is a PointConstraint
         {
             return EndpointValidRecursive(p, r, tri->Sym, tri->Sym, 0) &&
                    EndpointValidRecursive(p, r, tri->LNext->Sym, tri->LNext->Sym, 0) &&
@@ -447,14 +420,13 @@ namespace DotsNav.PathFinding
 
         static bool EndpointValidRecursive(float2 p, float r, Edge* tri, Edge* startingTri, int depth)
         {
-            return (depth > 0 && tri == startingTri)
-                || (Math.IntersectSegCircle(tri->Org->Point, tri->Dest->Point, p, r) == 0
-                && math.length(p - tri->Org->Point) > r
-                && math.length(p - tri->Dest->Point) > r)
-                //||  !tri->Constrained &&
-                || (!tri->EdgeType.HasAllFlagsB(Edge.Type.Obstacle)
-                && EndpointValidRecursive(p, r, tri->LNext->Sym, startingTri, depth + 1)
-                && EndpointValidRecursive(p, r, tri->LPrev->Sym, startingTri, depth + 1));
+            return depth > 10 || (depth > 0 && (tri == startingTri || tri == startingTri->Sym)) || // first condition is a hack to fight infinite recursion stack overflow
+                   (Math.IntersectSegCircle(tri->Org->Point, tri->Dest->Point, p, r) == 0 &&
+                   math.length(p - tri->Org->Point) > r &&
+                   math.length(p - tri->Dest->Point) > r) ||
+                   (!tri->IsObstacle &&
+                   EndpointValidRecursive(p, r, tri->LNext->Sym, startingTri, depth + 1) &&
+                   EndpointValidRecursive(p, r, tri->LPrev->Sym, startingTri, depth + 1));
         }
 
         static Quad TransformRect(float2 translation, float2 size, float angle)
@@ -559,8 +531,9 @@ namespace DotsNav.PathFinding
             public readonly int Previous;
             public readonly float2 ReferencePoint;
             readonly float _gPlusH;
+            public readonly bool IsGateIgnored;
 
-            public Step(Edge* edge, int stepId, float g, float h, int previous, float2 referencePoint)
+            public Step(Edge* edge, int stepId, float g, float h, int previous, float2 referencePoint, bool isGateIgnored)
             {
                 Edge = edge;
                 StepId = stepId;
@@ -568,6 +541,7 @@ namespace DotsNav.PathFinding
                 _gPlusH = g + h;
                 Previous = previous;
                 ReferencePoint = referencePoint;
+                IsGateIgnored = isGateIgnored;
             }
 
             public int CompareTo(Step other)

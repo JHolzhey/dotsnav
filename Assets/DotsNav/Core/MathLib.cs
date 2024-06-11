@@ -156,9 +156,9 @@ public static class MathLib
     }
 
     ///! returns true if not first
-    public static bool LogicalIf(bool first, bool second) => !(first && !second);
+    [MI(AggressiveInlining)] public static bool LogicalIf(bool first, bool second) => !(first && !second);
 
-    public static bool LogicalIff(bool first, bool second) => first == second;
+    [MI(AggressiveInlining)] public static bool LogicalIff(bool first, bool second) => first == second;
     
 //     public unsafe static bool DebugCheckNull(void* data) {
 // #if UNITY_ASSERTIONS
@@ -197,6 +197,8 @@ public static class MathLib
     public static bool IsVectorYZPlane(float3 vector, float epsilon = 0.001f) => math.abs(vector.x) < epsilon;
     public static bool IsVectorXYPlane(float3 vector, float epsilon = 0.001f) => math.abs(vector.z) < epsilon;
     public static bool IsVectorTowardsNormal(float3 vector, float3 normal) => math.dot(vector, normal) < 0f;
+    public static bool AreVectorSameDir(float3 vector0, float3 vector1) => math.dot(vector0, vector1) > 0f;
+    public static bool AreVectorsSameDir(float2 vector0, float2 vector1) => math.dot(vector0, vector1) > 0f;
     public static bool IsNormalized(float3 vector, float epsilon = 0.001f) => IsEpsEqual(math.length(vector), 1f, epsilon);
 
     public static bool IsEpsEqualApprox(float2 vector1, float2 vector2, float epsilon = float.Epsilon) => math.all(math.abs(vector2 - vector1) < epsilon);

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using DotsNav.Collections;
 using DotsNav.PathFinding.Data;
 using Unity.Collections;

@@ -487,12 +487,12 @@ namespace DotsNav.Navmesh.Systems
                 }
 
                 UnityEngine.Debug.Log("OKURRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR");
-                foreach (IntPtr e in navmesh->ModifiedMajorEdges) {
+                foreach (IntPtr e in navmesh->AddedOrModifiedMajorEdges) {
                     Edge* edge = (Edge*)e;
 
                     navmesh->InsertMajorInMinor(edge);
                 }
-                navmesh->ModifiedMajorEdges.Clear();
+                navmesh->AddedOrModifiedMajorEdges.Clear();
 
                 var destroyedTriangles = DestroyedTriangleBufferLookup[Data.Value.Plane];
                 destroyedTriangles.Clear();

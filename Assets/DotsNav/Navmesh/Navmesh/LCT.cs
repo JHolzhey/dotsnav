@@ -8,6 +8,7 @@ namespace DotsNav.Navmesh
         internal static void ResetClearance(Edge* s)
         {
             if (!Edge.IsEdgeTypeMajor(s->EdgeType)) {
+                UnityEngine.Debug.Log("Minor edge ResetClearance");
                 return;
             }
             var perp = Math.PerpCcw(s->Dest->Point - s->Org->Point);
@@ -270,7 +271,7 @@ namespace DotsNav.Navmesh
                   Math.IntersectSegCircle(s1, s2, mirror, clearance) == 2))
                 return null;
 
-            if (edge->Constrained)
+            if (edge->IsObstacle) //edge->Constrained)
                 return edge;
 
             return CheckTriForConstraint(edge->Sym, clearance, corner, mirror);
@@ -278,7 +279,7 @@ namespace DotsNav.Navmesh
 
         public static Edge* TryGetConstraint(double clearance, double2 corner, Edge* edge)
         {
-            if (edge->Constrained) // todo should we check distance here? We do so for any other constraint we find
+            if (edge->IsObstacle) //edge->Constrained) // todo should we check distance here? We do so for any other constraint we find
                 return edge;
             return CheckTriForConstraint(edge, clearance, corner);
         }
@@ -300,7 +301,7 @@ namespace DotsNav.Navmesh
             if (Math.IntersectSegCircle(s1, s2, corner, clearance) != 2)
                 return null;
 
-            if (edge->Constrained)
+            if (edge->IsObstacle) // edge->Constrained)
                 return edge;
 
             return CheckTriForConstraint(edge->Sym, clearance, corner);

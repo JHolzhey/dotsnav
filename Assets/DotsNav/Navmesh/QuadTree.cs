@@ -40,6 +40,14 @@ namespace DotsNav.Navmesh
 
         Vertex** Malloc() => (Vertex**) Mem.Malloc<IntPtr>(_bucketSize, _allocator);
 
+        // For potential future functionality where can find a Major and Minor vertex at the same time and not have to have double if statement running no matter what
+        // interface ClosestVertexFinder {
+        //     public Vertex* closest { get; }
+        //     public Vertex* dist { get; }
+        // }
+        // struct MajorOrMinor : ClosestVertexFinder {
+        // }
+
         public Vertex* FindClosest(float2 p, Vertex.Type vertexType = Vertex.Type.Major, float rangeSq = float.MaxValue)
         {
             var node = _root;

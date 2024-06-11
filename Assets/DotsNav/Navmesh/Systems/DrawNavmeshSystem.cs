@@ -66,6 +66,8 @@ namespace DotsNav.Navmesh.Systems
                     }
                 }
 
+                int minorLefts = 0;
+                int minorRights = 0;
                 while (true && enumeratorMinor.MoveNext())
                 {
                     var edge = enumeratorMinor.Current;
@@ -105,7 +107,24 @@ namespace DotsNav.Navmesh.Systems
                             lines.Add(new Line(minorMidpoint, majorMidpoint, Color.grey));
                         }
                     }
+
+                    if (false) {
+                        if (edge->DebugNonCalcClearanceLeft != -1) {
+                            minorLefts++;
+                            Debug.Log($"Major edge->DebugNonCalcClearanceLeft: {edge->DebugNonCalcClearanceLeft}");
+                        }
+                        if (edge->DebugNonCalcClearanceRight != -1) {
+                            minorRights++;
+                            Debug.Log($"Minor edge->DebugNonCalcClearanceRight: {edge->DebugNonCalcClearanceRight}");
+                        }
+                    }
                 }
+
+                // Debug.Log($"Minor Lefts: {minorLefts}");
+                // Debug.Log($"Minor Rights: {minorRights}");
+
+
+
 
                 var enumerator = navmesh.Navmesh->GetEdgeEnumerator(true);
 
@@ -117,6 +136,8 @@ namespace DotsNav.Navmesh.Systems
                     }
                 }
 
+                int majorLefts = 0;
+                int majorRights = 0;
                 while (enumerator.MoveNext())
                 {
                     var edge = enumerator.Current;
@@ -136,7 +157,22 @@ namespace DotsNav.Navmesh.Systems
                     var b = math.transform(ltw.Value, edge->Dest->Point.ToXxY());
 
                     lines.Add(new Line(a, b, c));
+
+                    if (false) {
+                        if (edge->DebugNonCalcClearanceLeft != -1) {
+                            majorLefts++;
+                            Debug.Log($"Major edge->DebugNonCalcClearanceLeft: {edge->DebugNonCalcClearanceLeft}");
+                        }
+                        if (edge->DebugNonCalcClearanceRight != -1) {
+                            majorRights++;
+                            Debug.Log($"Major edge->DebugNonCalcClearanceRight: {edge->DebugNonCalcClearanceRight}");
+                        }
+                    }
                 }
+
+                // Debug.Log($"Major Lefts: {majorLefts}");
+                // Debug.Log($"Major Rights: {majorRights}");
+
 
                 Line.Draw(lines.AsArray());
             }

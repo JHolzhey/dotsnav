@@ -26,12 +26,15 @@ namespace DotsNav.Navmesh
         unsafe Edge* _majorEdge;
         public unsafe Edge* MajorEdge {
             get {
-                // UnityEngine.Debug.Assert(MathLib.IfFirstCheckSecond(_majorEdge != null, EdgeType == Edge.Type.ConnectsToTerrainWithMajorConnectsToObstacle));
                 return _majorEdge;
             }
             set {
-                // UnityEngine.Debug.Assert(value->EdgeType == Edge.Type.ConnectsToObstacleWithMinorTerrainConnects);
-                _majorEdge = value;
+                if (value != null) {
+                    UnityEngine.Debug.Assert(MathLib.IsParallel(Edge0.SegVector.XOY(), value->SegVector.XOY(), 0.001f));
+                    _majorEdge = MathLib.AreVectorsSameDir(Edge0.SegVector, value->SegVector) ? value : value->Sym; // Primary edge and MajorEdge face same direction
+                } else {
+                    _majorEdge = null;
+                }
             }
         }
 

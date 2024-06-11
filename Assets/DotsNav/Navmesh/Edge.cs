@@ -1,6 +1,7 @@
 using Unity.Entities;
 using System.Collections.Generic;
 using Unity.Mathematics;
+using UnityEditor;
 
 namespace DotsNav.Navmesh
 {
@@ -21,7 +22,7 @@ namespace DotsNav.Navmesh
             Clearance = 1 << 3,
 
             Terrain = 1 << 4,
-            TerrainSub = 1 << 5, // Consider renaming to Ignore
+            Ignore = 1 << 5, // Consider renaming to Ignore
         }
 
         public static readonly Dictionary<Type, UnityEngine.Color> EdgeColors = new Dictionary<Type, UnityEngine.Color> {
@@ -31,7 +32,7 @@ namespace DotsNav.Navmesh
             { Type.Minor | Type.Obstacle, UnityEngine.Color.blue },
             { Type.Minor | Type.Clearance, UnityEngine.Color.yellow },
             { Type.Minor | Type.Terrain, UnityEngine.Color.green },
-            { Type.Minor | Type.TerrainSub, UnityEngine.Color.cyan },
+            { Type.Minor | Type.Ignore, UnityEngine.Color.cyan },
         };
 
         public Type EdgeType => QuadEdge->EdgeType;
@@ -39,23 +40,14 @@ namespace DotsNav.Navmesh
             QuadEdge->EdgeType = fixedEdgeType;
         }
 
-        public unsafe bool IsMajorTypeConstrained() {
-            UnityEngine.Debug.Assert(EdgeType.HasAnyFlagsB(Type.Major));
-            return EdgeType.HasAnyFlagsB(Type.Obstacle);
-        }
-        public unsafe bool IsMinorTypeConstrained() {
-            UnityEngine.Debug.Assert(EdgeType.HasAnyFlagsB(Type.Minor));
-            return EdgeType.HasAnyFlagsB(Type.Terrain | Type.Obstacle | Type.Clearance);
-        }
+        public bool IsObstacle => EdgeType.HasAllFlagsB(Type.Obstacle);
+        public bool IsClearance => EdgeType.HasAllFlagsB(Type.Clearance);
+        public bool IsTerrain => EdgeType.HasAllFlagsB(Type.Terrain);
 
-
-        public unsafe bool IsTypeConstrained() {
+        public unsafe bool IsEdgeTypeConstrained() {
             VerifyEdgeType(EdgeType);
-            if (IsEdgeTypeMajor(EdgeType)) {
-                return IsMajorTypeConstrained();
-            } else {
-                return IsMinorTypeConstrained();
-            }
+            return (EdgeType.HasAllFlagsB(Type.Major) && EdgeType.HasAnyFlagsB(Type.Obstacle))
+                || (EdgeType.HasAllFlagsB(Type.Minor) && EdgeType.HasAnyFlagsB(Type.Terrain | Type.Obstacle | Type.Clearance));
         }
 
         public static unsafe bool IsEdgeTypeMajor(Type edgeType) {
@@ -68,7 +60,7 @@ namespace DotsNav.Navmesh
         public static unsafe void VerifyEdgeType(Type edgeType) => VerifyEdgeType(edgeType, IsEdgeTypeMajor(edgeType));
         public static unsafe void VerifyEdgeType(Type edgeType, bool isMajor) {
             UnityEngine.Debug.Assert((isMajor && edgeType.HasAnyFlagsB(Type.Major) && edgeType.HasNoFlagsB(Type.Minor) && edgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance))
-                || (!isMajor && edgeType.HasAnyFlagsB(Type.Minor) && edgeType.HasNoFlagsB(Type.Major) && edgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance | Type.Terrain | Type.TerrainSub))
+                || (!isMajor && edgeType.HasAnyFlagsB(Type.Minor) && edgeType.HasNoFlagsB(Type.Major) && edgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance | Type.Terrain | Type.Ignore))
                 , $"isMajor: {isMajor}, edgeType: {edgeType}");
         }
 
@@ -157,6 +149,9 @@ namespace DotsNav.Navmesh
             }
             internal set => _clearanceRight = value;
         }
+        
+        public float DebugNonCalcClearanceLeft => _clearanceLeft;
+        public float DebugNonCalcClearanceRight => _clearanceRight;
 
         /// <summary>
         /// True for one of a quadedge's two directed edges, i.e. true for either edge(x,y) or edge(y,x).
@@ -176,10 +171,18 @@ namespace DotsNav.Navmesh
             set => QuadEdge->Mark = value;
         }
 
-        internal Edge* MajorEdge
+        public float2 SegVector => Dest->Point - Org->Point;
+
+        public Edge* MajorEdge
         {
             get => QuadEdge->MajorEdge;
-            set => QuadEdge->MajorEdge = value;
+            internal set => QuadEdge->MajorEdge = value;
+        }
+        public bool HasMajorEdge => MajorEdge != null;
+        public Edge* GetMajorEdgeSameDir() {
+            UnityEngine.Debug.Assert(MathLib.IsParallel(SegVector.XOY(), MajorEdge->SegVector.XOY(), 0.001f));
+            UnityEngine.Debug.Assert(MathLib.AreVectorsSameDir(SegVector, (IsPrimary ? MajorEdge : MajorEdge->Sym)->SegVector));
+            return IsPrimary ? MajorEdge : MajorEdge->Sym;
         }
 
         public ReadOnly<Entity> Constraints => new(QuadEdge->Crep.Ptr, QuadEdge->Crep.Length);

@@ -14,7 +14,7 @@ namespace DotsNav.Navmesh
     /// </summary>
     public unsafe partial struct Navmesh
     {
-        const int CrepMinCapacity = 4; // todo what's a good number, shrink when reusing?
+        const int CrepMinCapacity = 1; // todo what's a good number, shrink when reusing?
 
         public float2 Extent;
         public int Vertices => _verticesSeq.Length;
@@ -35,7 +35,8 @@ namespace DotsNav.Navmesh
         PtrStack<Edge> _flipStack;
         PtrStack<Edge> _flipStackMinor;
         UnsafeList<Point> _insertedPoints;
-        PtrStack<Vertex> _open;
+        PtrStack<Vertex> _openStack;
+        UnsafePtrQueue<Vertex> _openQueue;
         UnsafeList<IntPtr> _vlist;
         UnsafeList<IntPtr> _elist;
         UnsafeList<IntPtr> _vlistMinor;
@@ -44,9 +45,9 @@ namespace DotsNav.Navmesh
         internal HashSet<int> DestroyedTriangles;
         Deque<IntPtr> _refinementQueue;
 
-        internal HashSet<IntPtr> ModifiedMajorEdges;
+        internal HashSet<IntPtr> AddedOrModifiedMajorEdges;
 
-        internal readonly static Entity MinorObstacleEntity = new Entity{Index = int.MinValue, Version = int.MinValue};
+        internal readonly static Entity MinorObstacleCid = new Entity{Index = int.MinValue, Version = int.MinValue};
 
         int _mark;
         int _edgeId;
@@ -79,7 +80,8 @@ namespace DotsNav.Navmesh
             _flipStack = new PtrStack<Edge>(32, Allocator.Persistent);
             _flipStackMinor = new PtrStack<Edge>(32, Allocator.Persistent);
             _insertedPoints = new UnsafeList<Point>(64, Allocator.Persistent);
-            _open = new PtrStack<Vertex>(64, Allocator.Persistent);
+            _openStack = new PtrStack<Vertex>(64, Allocator.Persistent);
+            _openQueue = new UnsafePtrQueue<Vertex>(10, Allocator.Persistent);
             _vlist = new UnsafeList<IntPtr>(64, Allocator.Persistent);
             _elist = new UnsafeList<IntPtr>(64, Allocator.Persistent);
             _vlistMinor = new UnsafeList<IntPtr>(64, Allocator.Persistent);
@@ -90,7 +92,7 @@ namespace DotsNav.Navmesh
             DestroyedTriangles = new HashSet<int>(64, Allocator.Persistent);
             _refinementQueue = new Deque<IntPtr>(24, Allocator.Persistent);
 
-            ModifiedMajorEdges = new HashSet<IntPtr>(64, Allocator.Persistent);
+            AddedOrModifiedMajorEdges = new HashSet<IntPtr>(64, Allocator.Persistent);
 
             _mark = default;
             _edgeId = default;
@@ -134,40 +136,37 @@ namespace DotsNav.Navmesh
             var topMinor = CreateEdge(topRight, topleft, Edge.Type.Minor | Edge.Type.Obstacle, top);
             var leftMinor = CreateEdge(topleft, bottomLeft, Edge.Type.Minor | Edge.Type.Obstacle, left);
 
-            bottomMinor->AddConstraint(MinorObstacleEntity); // Could also just not Add a Constraint
-            rightMinor->AddConstraint(MinorObstacleEntity);
-            topMinor->AddConstraint(MinorObstacleEntity);
-            leftMinor->AddConstraint(MinorObstacleEntity);
+            bottomMinor->AddConstraint(MinorObstacleCid); // Could also just not Add a Constraint
+            rightMinor->AddConstraint(MinorObstacleCid);
+            topMinor->AddConstraint(MinorObstacleCid);
+            leftMinor->AddConstraint(MinorObstacleCid);
 
             Splice(bottomMinor->Sym, rightMinor);
             Splice(rightMinor->Sym, topMinor);
             Splice(topMinor->Sym, leftMinor);
             Splice(leftMinor->Sym, bottomMinor);
 
-            Edge* debugTestEdge = Connect(rightMinor, bottomMinor, Edge.Type.Minor | Edge.Type.TerrainSub, null);
+            Connect(rightMinor, bottomMinor, Edge.Type.Minor | Edge.Type.Ignore, null);
 
 
 
-            ModifiedMajorEdges.Clear();
+            AddedOrModifiedMajorEdges.Clear();
 
             UnityEngine.Debug.Log($"Starting insert: =======================================================================================");
 
             var bounds = stackalloc float2[] {-Extent, new float2(Extent.x, -Extent.y), Extent, new float2(-Extent.x, Extent.y), -Extent};
             InsertMajor(bounds, 0, 5, Entity.Null, float4x4.identity, Edge.Type.Obstacle);
 
-            UnityEngine.Debug.Log($"_modifiedMajorEdges.Length: {ModifiedMajorEdges.Length} =======================================================================================");
-            foreach (IntPtr e in ModifiedMajorEdges) {
+            UnityEngine.Debug.Log($"_modifiedMajorEdges.Length: {AddedOrModifiedMajorEdges.Length} =======================================================================================");
+            foreach (IntPtr e in AddedOrModifiedMajorEdges) {
                 Edge* edge = (Edge*)e;
                 if (!Contains(edge->Org->Point) || !Contains(edge->Dest->Point)) {
-                    // CommonLib.DebugVector(edge->Org->Point.XOY(), edge->Dest->Point.XOY() - edge->Org->Point.XOY(), UnityEngine.Color.black, 0.01f);
                     continue;
                 }
-                // CommonLib.DebugVector(edge->Org->Point.XOY(), edge->Dest->Point.XOY() - edge->Org->Point.XOY(), UnityEngine.Color.white, 0.01f);
-
                 InsertMajorInMinor(edge);
             }
 
-            ModifiedMajorEdges.Clear();
+            AddedOrModifiedMajorEdges.Clear();
         }
 
         internal void Dispose()
@@ -194,11 +193,15 @@ namespace DotsNav.Navmesh
             _edgeSearch.Dispose();
             _flipStack.Dispose();
             _insertedPoints.Dispose();
-            _open.Dispose();
+            _openStack.Dispose();
+            _openQueue.Dispose();
             _vlist.Dispose();
             _elist.Dispose();
+            _vlistMinor.Dispose();
+            _elistMinor.Dispose();
             DestroyedTriangles.Dispose();
             _refinementQueue.Dispose();
+            AddedOrModifiedMajorEdges.Dispose();
         }
 
         public bool Contains(float2 p) => Math.Contains(p, -Extent, Extent);

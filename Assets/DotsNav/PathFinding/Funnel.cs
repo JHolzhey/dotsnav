@@ -37,7 +37,7 @@ namespace DotsNav.PathFinding
 
             for (int i = 1; i < channel.Length; i++)
             {
-                Assert.IsTrue(math.all(channel[i].Left == channel[i - 1].Left) != math.all(channel[i].Right == channel[i - 1].Right));
+                //Assert.IsTrue(math.all(channel[i].Left == channel[i - 1].Left) != math.all(channel[i].Right == channel[i - 1].Right));
 
                 var toInsert = channel[i];
 
