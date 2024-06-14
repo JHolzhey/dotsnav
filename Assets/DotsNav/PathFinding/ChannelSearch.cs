@@ -5,6 +5,7 @@ using DotsNav.Drawing;
 using DotsNav.Navmesh;
 using DotsNav.PathFinding.Data;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Entities.UniversalDelegates;
 using Unity.Mathematics;
@@ -16,6 +17,7 @@ namespace DotsNav.PathFinding
     {
         readonly PriorityQueue<Step> _open;
         readonly HashSet<int> _closed;
+        readonly UnsafeHashMap<int, Step> _closedStepsDebug;
         readonly HashSet<int> _closedEdges;
         readonly HashSet<IntPtr> _closedVerts;
         readonly List<Step> _steps;
@@ -26,6 +28,7 @@ namespace DotsNav.PathFinding
         {
             _open = new PriorityQueue<Step>(maxNodes);
             _closed = new HashSet<int>(maxNodes, allocator);
+            _closedStepsDebug = new UnsafeHashMap<int, Step>(10, allocator);
             _closedEdges = new HashSet<int>(36, allocator);
             _closedVerts = new HashSet<IntPtr>(36, allocator);
             _steps = new List<Step>(intialSteps, allocator);
@@ -37,6 +40,7 @@ namespace DotsNav.PathFinding
         {
             var open = _open;
             var closed = _closed;
+            var closedStepsDebug = _closedStepsDebug;
             var steps = _steps;
             var diameter = 2 * radius;
             var verts = _verts;
@@ -133,15 +137,23 @@ namespace DotsNav.PathFinding
 
                     while (step.Previous != -1)
                     {
-                        if (!step.IsGateIgnored) {
-                            path.Add(new Gate {Left = step.Edge->GetMajorEdgeSameDir()->Org->Point, Right = step.Edge->GetMajorEdgeSameDir()->Dest->Point});
-                            triangleIds.Add(step.Edge->TriangleId);
-                        }
+                        AddGateToPath(step);
                         step = steps[step.Previous];
                     }
-                    if (!step.IsGateIgnored) {
-                        path.Add(new Gate {Left = step.Edge->GetMajorEdgeSameDir()->Org->Point, Right = step.Edge->GetMajorEdgeSameDir()->Dest->Point});
-                        triangleIds.Add(step.Edge->TriangleId);
+                    AddGateToPath(step);
+
+                    void AddGateToPath(Step step)
+                    {
+                        UnityEngine.Debug.Assert(step.MainEdgeType != Edge.Type.Obstacle, "Steps should not be obstacles");
+                        if (step.MainEdgeType == Edge.Type.Clearance) {
+                            path.Add(new Gate {Left = step.Edge->GetMajorEdge()->Org->Point, Right = step.Edge->GetMajorEdge()->Dest->Point});
+                            triangleIds.Add(step.Edge->TriangleId);
+                        } else if (step.MainEdgeType == Edge.Type.Terrain) {
+                            path.Add(new Gate {Left = step.Edge->Org->Point, Right = step.Edge->Dest->Point});
+                            triangleIds.Add(step.Edge->TriangleId);
+                        }
+
+                        CommonLib.DebugSeg(step.Edge->Org->Point.XOY(), step.Edge->Dest->Point.XOY(), Color.black, 0.005f, 0.03f, 0.025f);
                     }
 
                     triangleIds.Add(startId);
@@ -157,21 +169,22 @@ namespace DotsNav.PathFinding
                 }
 
                 closed.TryAdd(id);
+                closedStepsDebug.TryAdd(id, step);
 
 
                 var next = step.Edge->LNext;
                 float clearanceRight = -1;
                 if (next->IsClearance) {
-                    clearanceRight = next->GetMajorEdgeSameDir()->ClearanceRight;
+                    clearanceRight = next->GetMajorEdge()->ClearanceRight;
                 } else if (!next->IsObstacle) {
                     clearanceRight = float.MaxValue;
                 }
-                Expand(next->Sym /* note the Sym here */, clearanceRight);
+                Expand(next->Sym, clearanceRight); // note the Sym here
 
                 next = step.Edge->LPrev->Sym;
                 float clearanceLeft = -1;
                 if (next->IsClearance) {
-                    clearanceLeft = next->GetMajorEdgeSameDir()->ClearanceLeft;
+                    clearanceLeft = next->GetMajorEdge()->ClearanceLeft;
                 } else if (!next->IsObstacle) {
                     clearanceLeft = float.MaxValue;
                 }
@@ -190,8 +203,25 @@ namespace DotsNav.PathFinding
                         if (!validGoalEdges.Contains(edge->QuadEdgeId))
                             return;
                     }
-                    else if (closed.Contains(edge->TriangleId))
+                    else if (closed.Contains(edge->TriangleId)) {
+                        var newStepDebugTest = new Step
+                        (
+                            edge,
+                            steps.Length,
+                            step.G + C(step.ReferencePoint, edge, out var referencePointDebugTest),
+                            H(referencePointDebugTest, goal),
+                            step.StepId,
+                            referencePointDebugTest
+                        );
+                        if (closedStepsDebug.ContainsKey(edge->TriangleId)) {
+                            Step edgePrevStep = closedStepsDebug[edge->TriangleId];
+                            UnityEngine.Debug.Assert(edgePrevStep._gPlusH < newStepDebugTest._gPlusH, "Testing");
+                            UnityEngine.Debug.Assert(edgePrevStep.G < newStepDebugTest.G, "Testing 2");
+                        }
                         return;
+                    }
+
+                    CommonLib.DebugSeg(step.Edge->Org->Point.XOY(), step.Edge->Dest->Point.XOY(), Color.white, 0.005f, 0.03f, 0.015f);
 
                     var newStep = new Step
                     (
@@ -200,8 +230,7 @@ namespace DotsNav.PathFinding
                         step.G + C(step.ReferencePoint, edge, out var referencePoint),
                         H(referencePoint, goal),
                         step.StepId,
-                        referencePoint,
-                        !edge->IsClearance // TODO
+                        referencePoint
                     );
 
                     steps.Add(newStep);
@@ -287,7 +316,7 @@ namespace DotsNav.PathFinding
 
                 void ValidEdge(Edge* e)
                 {
-                    if (!e->IsObstacle && !(e->HasMajorEdge && EndpointDisturbed(e->GetMajorEdgeSameDir(), goal))) // TODO: EndpointDisturbed edge may be different from whats expected from Major edge
+                    if (!e->IsObstacle && !(e->HasMajorEdge && EndpointDisturbed(e->GetMajorEdge(), goal))) // TODO: EndpointDisturbed edge may be different from whats expected from Major edge
                         valid.Add(e->QuadEdgeId);
                 }
             }
@@ -297,8 +326,10 @@ namespace DotsNav.PathFinding
                 if (edge->IsObstacle || edge->TriangleId == goalId && !validGoalEdges.Contains(edge->QuadEdgeId))
                     return;
 
-                if (edge->HasMajorEdge && EndpointDisturbed(edge->GetMajorEdgeSameDir()->Sym, start)) // TODO: EndpointDisturbed edge may be different from whats expected from Major edge
+                if (edge->HasMajorEdge && EndpointDisturbed(edge->GetMajorEdge()->Sym, start)) // TODO: EndpointDisturbed edge may be different from whats expected from Major edge
                     return;
+
+                CommonLib.DebugSeg(edge->Org->Point.XOY(), edge->Dest->Point.XOY(), Color.white, 0.005f, 0.03f, 0.015f);
 
                 var newStep = new Step
                 (
@@ -307,15 +338,14 @@ namespace DotsNav.PathFinding
                     C(start, edge, out var referencePoint),
                     H(referencePoint, goal),
                     -1,
-                    referencePoint,
-                    !edge->IsClearance // TODO
+                    referencePoint
                 );
 
                 steps.Add(newStep);
                 open.Insert(newStep);
             }
 
-            bool EndpointDisturbed(Edge* edgeMajor, float2 endpoint) // TODO: Change parameter name to edgeMajor
+            bool EndpointDisturbed(Edge* edgeMajor, float2 endpoint)
             {
                 var q = new Quad
                 {
@@ -337,7 +367,7 @@ namespace DotsNav.PathFinding
                 return false;
             }
 
-            // TODO: Use lengthsq instead?
+            // TODO: Use lengthsq instead? Also, add Heuristic weight?
             float C(float2 from, Edge* edge, out float2 referencePoint)
             {
                 var o = edge->Org->Point;
@@ -411,7 +441,7 @@ namespace DotsNav.PathFinding
             DebugDraw(q.D, q.A, color);
         }
 
-        static bool EndpointValid(float2 p, float r, Edge* tri) // TODO: Check if either Org or Dest is a PointConstraint
+        static bool EndpointValid(float2 p, float r, Edge* tri) // TODO: If vertices don't connect to obstacle edge this will stack overflow, hacky fix below
         {
             return EndpointValidRecursive(p, r, tri->Sym, tri->Sym, 0) &&
                    EndpointValidRecursive(p, r, tri->LNext->Sym, tri->LNext->Sym, 0) &&
@@ -505,6 +535,7 @@ namespace DotsNav.PathFinding
         {
             _open.Clear();
             _closed.Clear();
+            _closedStepsDebug.Clear();
             _steps.Clear();
             _verts.Clear();
             _validGoalEdges.Clear();
@@ -514,6 +545,7 @@ namespace DotsNav.PathFinding
         {
             _open.Dispose();
             _closed.Dispose();
+            _closedStepsDebug.Dispose();
             _steps.Dispose();
             _verts.Dispose();
             _validGoalEdges.Dispose();
@@ -526,22 +558,22 @@ namespace DotsNav.PathFinding
             // todo confusing, probably better off making this StepId and add TriangleId, could forego index in priorityqueue
             public int Id => Edge->TriangleId;
             public readonly Edge* Edge;
+            public readonly Edge.Type MainEdgeType;
             public readonly int StepId;
             public readonly float G;
             public readonly int Previous;
             public readonly float2 ReferencePoint;
-            readonly float _gPlusH;
-            public readonly bool IsGateIgnored;
+            public readonly float _gPlusH; // TODO: Made public for debug
 
-            public Step(Edge* edge, int stepId, float g, float h, int previous, float2 referencePoint, bool isGateIgnored)
+            public Step(Edge* edge, int stepId, float g, float h, int previous, float2 referencePoint)
             {
                 Edge = edge;
+                MainEdgeType = edge->EdgeType & ~(Navmesh.Edge.Type.Major | Navmesh.Edge.Type.Minor);
                 StepId = stepId;
                 G = g;
                 _gPlusH = g + h;
                 Previous = previous;
                 ReferencePoint = referencePoint;
-                IsGateIgnored = isGateIgnored;
             }
 
             public int CompareTo(Step other)

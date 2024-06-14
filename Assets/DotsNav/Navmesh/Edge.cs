@@ -22,7 +22,7 @@ namespace DotsNav.Navmesh
             Clearance = 1 << 3,
 
             Terrain = 1 << 4,
-            Ignore = 1 << 5, // Consider renaming to Ignore
+            Ignore = 1 << 5,
         }
 
         public static readonly Dictionary<Type, UnityEngine.Color> EdgeColors = new Dictionary<Type, UnityEngine.Color> {
@@ -35,14 +35,31 @@ namespace DotsNav.Navmesh
             { Type.Minor | Type.Ignore, UnityEngine.Color.cyan },
         };
 
-        public Type EdgeType => QuadEdge->EdgeType;
-        internal void SetEdgeType(Type fixedEdgeType) {
-            QuadEdge->EdgeType = fixedEdgeType;
+        internal readonly QuadEdge* QuadEdge;
+        internal Edge* Next;
+        readonly int _indexInQuadEdge;
+        float _clearanceLeft;
+        float _clearanceRight;
+
+        internal Edge(QuadEdge* quadEdge, int indexInQuadEdge) : this()
+        {
+            QuadEdge = quadEdge;
+            _indexInQuadEdge = indexInQuadEdge;
+            _clearanceLeft = -1;
+            _clearanceRight = -1;
         }
 
+        public Type EdgeType => QuadEdge->EdgeType;
+
+        public bool IsMajor => EdgeType.HasAllFlagsB(Type.Major);
         public bool IsObstacle => EdgeType.HasAllFlagsB(Type.Obstacle);
         public bool IsClearance => EdgeType.HasAllFlagsB(Type.Clearance);
         public bool IsTerrain => EdgeType.HasAllFlagsB(Type.Terrain);
+        public bool IsIgnore => EdgeType.HasAllFlagsB(Type.Ignore);
+
+        internal void SetEdgeType(Type fixedEdgeType) {
+            QuadEdge->EdgeType = fixedEdgeType;
+        }
 
         public unsafe bool IsEdgeTypeConstrained() {
             VerifyEdgeType(EdgeType);
@@ -53,7 +70,7 @@ namespace DotsNav.Navmesh
         public static unsafe bool IsEdgeTypeMajor(Type edgeType) {
             UnityEngine.Debug.Assert((edgeType.HasAnyFlagsB(Type.Major) && edgeType.HasNoFlagsB(Type.Minor))
                 || (edgeType.HasNoFlagsB(Type.Major) && edgeType.HasAnyFlagsB(Type.Minor)), $"EdgeType: {edgeType}"); // Edge type must be either Major or Minor, cannot be both
-            return edgeType.HasAnyFlagsB(Type.Major);
+            return edgeType.HasAllFlagsB(Type.Major);
         }
 
         // TODO: Make conditional
@@ -72,9 +89,7 @@ namespace DotsNav.Navmesh
 
                 if (e->EdgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance)) {
                     UnityEngine.Debug.Assert(e->MajorEdge != null, "Minor Obstaces and Clearances must have Major edges");
-                    if (e->MajorEdge != null) { // This is just to prevent null exception
-                        UnityEngine.Debug.Assert((e->EdgeType & ~ Type.Minor) == (e->MajorEdge->EdgeType & ~Type.Major), $"e->EdgeType: {e->EdgeType}, e->MajorEdge->EdgeType: {e->MajorEdge->EdgeType}");
-                    }
+                    UnityEngine.Debug.Assert(e->MajorEdge != null && (e->EdgeType & ~ Type.Minor) == (e->MajorEdge->EdgeType & ~Type.Major), $"e->EdgeType: {e->EdgeType}, e->MajorEdge->EdgeType: {e->MajorEdge->EdgeType}");
                 }
             }
             if (e->MajorEdge != null) {
@@ -84,20 +99,6 @@ namespace DotsNav.Navmesh
         public static unsafe void VerifyEdge(Edge* e, bool isMajor) {
             VerifyEdgeType(e->EdgeType, isMajor);
             VerifyEdge(e);
-        }
-
-        internal readonly QuadEdge* QuadEdge;
-        internal Edge* Next;
-        readonly int _indexInQuadEdge;
-        float _clearanceLeft;
-        float _clearanceRight;
-
-        internal Edge(QuadEdge* quadEdge, int indexInQuadEdge) : this()
-        {
-            QuadEdge = quadEdge;
-            _indexInQuadEdge = indexInQuadEdge;
-            _clearanceLeft = -1;
-            _clearanceRight = -1;
         }
 
         /// <summary>
@@ -121,6 +122,11 @@ namespace DotsNav.Navmesh
         /// LNext and LPrev, with the last triangle created having a higher value than any previously created triangle.
         /// </summary>
         public int TriangleId { get; internal set; }
+
+        /// <summary>
+        /// Returns cost of traversing this edge's left face, i.e. this value will be the same for this edge, LNext and LPrev.
+        /// </summary>
+        public float TriangleCost { get; internal set; }
 
         /// <summary>
         /// Returns the amount of clearance when traversing this edge while moving left.
@@ -173,13 +179,13 @@ namespace DotsNav.Navmesh
 
         public float2 SegVector => Dest->Point - Org->Point;
 
-        public Edge* MajorEdge
+        internal Edge* MajorEdge
         {
             get => QuadEdge->MajorEdge;
-            internal set => QuadEdge->MajorEdge = value;
+            set => QuadEdge->MajorEdge = value;
         }
         public bool HasMajorEdge => MajorEdge != null;
-        public Edge* GetMajorEdgeSameDir() {
+        public Edge* GetMajorEdge() { // Assumes MajorEdge exists. Returns MajorEdge facing same direction as this edge
             UnityEngine.Debug.Assert(MathLib.IsParallel(SegVector.XOY(), MajorEdge->SegVector.XOY(), 0.001f));
             UnityEngine.Debug.Assert(MathLib.AreVectorsSameDir(SegVector, (IsPrimary ? MajorEdge : MajorEdge->Sym)->SegVector));
             return IsPrimary ? MajorEdge : MajorEdge->Sym;
