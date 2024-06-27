@@ -20,7 +20,10 @@ namespace DotsNav.Navmesh
 
         public unsafe bool Search(Vertex* start, Vertex* goal, Entity constraintId, Edge.Type newConstraintEdgeType, Edge* majorEdge)
         {
+            UnityEngine.Debug.LogWarning($"Edge Search; {newConstraintEdgeType}");
+
             Assert.IsTrue(start != goal);
+            bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
             Clear();
             var open = _open;
             var closed = _closed;
@@ -57,7 +60,7 @@ namespace DotsNav.Navmesh
 
                 closed.TryAdd((IntPtr) step.Vertex);
 
-                var e = step.Vertex->GetEdge(true); // TODO: True
+                var e = step.Vertex->GetEdge(true); // TODO: True // TODO: First see if things break, then fix and fix everywhere, search all TODOs;
                 var ii = 0;
                 do
                 {

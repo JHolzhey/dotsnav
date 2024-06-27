@@ -7,7 +7,6 @@ using DotsNav.PathFinding.Data;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
-using Unity.Entities.UniversalDelegates;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -53,12 +52,12 @@ namespace DotsNav.PathFinding
             if (!navmesh->Contains(goal))
                 return PathQueryState.GoalInvalid;
 
-            navmesh->FindTriangleContainingPoint(start, out Edge* startEdge, out Edge* startEdgeMajor);
+            navmesh->FindTrianglesContainingPoint(start, out Edge* startEdge, out Edge* startEdgeMajor);
             if (!EndpointValid(start, radius, startEdge))
                 return PathQueryState.StartInvalid;
             var startId = startEdge->TriangleId;
 
-            navmesh->FindTriangleContainingPoint(goal, out Edge* goalEdge, out Edge* goalEdgeMajor);
+            navmesh->FindTrianglesContainingPoint(goal, out Edge* goalEdge, out Edge* goalEdgeMajor);
             if (!EndpointValid(goal, radius, goalEdge))
                 return PathQueryState.GoalInvalid;
             var goalId = goalEdge->TriangleId;
@@ -174,18 +173,18 @@ namespace DotsNav.PathFinding
 
                 var next = step.Edge->LNext;
                 float clearanceRight = -1;
-                if (next->IsClearance) {
+                if (next->MainEdgeType == Edge.Type.Clearance) {
                     clearanceRight = next->GetMajorEdge()->ClearanceRight;
-                } else if (!next->IsObstacle) {
+                } else if (next->MainEdgeType != Edge.Type.Obstacle) {
                     clearanceRight = float.MaxValue;
                 }
                 Expand(next->Sym, clearanceRight); // note the Sym here
 
                 next = step.Edge->LPrev->Sym;
                 float clearanceLeft = -1;
-                if (next->IsClearance) {
+                if (next->MainEdgeType == Edge.Type.Clearance) {
                     clearanceLeft = next->GetMajorEdge()->ClearanceLeft;
-                } else if (!next->IsObstacle) {
+                } else if (next->MainEdgeType != Edge.Type.Obstacle) {
                     clearanceLeft = float.MaxValue;
                 }
                 Expand(next, clearanceLeft);
@@ -221,7 +220,10 @@ namespace DotsNav.PathFinding
                         return;
                     }
 
-                    CommonLib.DebugSeg(step.Edge->Org->Point.XOY(), step.Edge->Dest->Point.XOY(), Color.white, 0.005f, 0.03f, 0.015f);
+                    Color color = Color.black;
+                    if (edge == next) {
+                        CommonLib.DebugSeg(step.Edge->Org->Point.XOY(), step.Edge->Dest->Point.XOY(), color, 0.005f, 0.03f, 0.015f);
+                    }
 
                     var newStep = new Step
                     (
@@ -316,14 +318,14 @@ namespace DotsNav.PathFinding
 
                 void ValidEdge(Edge* e)
                 {
-                    if (!e->IsObstacle && !(e->HasMajorEdge && EndpointDisturbed(e->GetMajorEdge(), goal))) // TODO: EndpointDisturbed edge may be different from whats expected from Major edge
+                    if (e->MainEdgeType != Edge.Type.Obstacle && !(e->HasMajorEdge && EndpointDisturbed(e->GetMajorEdge(), goal))) // TODO: EndpointDisturbed edge may be different from whats expected from Major edge
                         valid.Add(e->QuadEdgeId);
                 }
             }
 
             void ExpandInitial(Edge* edge)
             {
-                if (edge->IsObstacle || edge->TriangleId == goalId && !validGoalEdges.Contains(edge->QuadEdgeId))
+                if (edge->MainEdgeType == Edge.Type.Obstacle || edge->TriangleId == goalId && !validGoalEdges.Contains(edge->QuadEdgeId))
                     return;
 
                 if (edge->HasMajorEdge && EndpointDisturbed(edge->GetMajorEdge()->Sym, start)) // TODO: EndpointDisturbed edge may be different from whats expected from Major edge
@@ -450,11 +452,11 @@ namespace DotsNav.PathFinding
 
         static bool EndpointValidRecursive(float2 p, float r, Edge* tri, Edge* startingTri, int depth)
         {
-            return depth > 10 || (depth > 0 && (tri == startingTri || tri == startingTri->Sym)) || // first condition is a hack to fight infinite recursion stack overflow
+            return depth > 10 || (depth > 0 && (tri == startingTri || tri == startingTri->Sym)) || // TODO: First condition is a hack to fight infinite recursion stack overflow
                    (Math.IntersectSegCircle(tri->Org->Point, tri->Dest->Point, p, r) == 0 &&
                    math.length(p - tri->Org->Point) > r &&
                    math.length(p - tri->Dest->Point) > r) ||
-                   (!tri->IsObstacle &&
+                   (tri->MainEdgeType != Edge.Type.Obstacle &&
                    EndpointValidRecursive(p, r, tri->LNext->Sym, startingTri, depth + 1) &&
                    EndpointValidRecursive(p, r, tri->LPrev->Sym, startingTri, depth + 1));
         }
@@ -568,7 +570,7 @@ namespace DotsNav.PathFinding
             public Step(Edge* edge, int stepId, float g, float h, int previous, float2 referencePoint)
             {
                 Edge = edge;
-                MainEdgeType = edge->EdgeType & ~(Navmesh.Edge.Type.Major | Navmesh.Edge.Type.Minor);
+                MainEdgeType = edge->MainEdgeType;
                 StepId = stepId;
                 G = g;
                 _gPlusH = g + h;

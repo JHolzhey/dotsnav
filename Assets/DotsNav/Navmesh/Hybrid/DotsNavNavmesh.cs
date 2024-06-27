@@ -3,7 +3,9 @@ using DotsNav.Drawing;
 using DotsNav.Hybrid;
 using DotsNav.Navmesh.Data;
 using Unity.Entities;
+using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
+using Unity.Collections;
 
 namespace DotsNav.Navmesh.Hybrid
 {
@@ -64,11 +66,23 @@ namespace DotsNav.Navmesh.Hybrid
             _entity = entity;
             
             var plane = GetComponent<DotsNavPlane>();
+
+            UnsafeList<NavmeshMaterialType> surfaceTypes = new UnsafeList<NavmeshMaterialType>(10, Allocator.Persistent) { // TODO: Expose to Editor
+                new NavmeshMaterialType("PavedRoad", 1f, Color.blue),
+                new NavmeshMaterialType("Clay", 1.1f, Color.red),
+                new NavmeshMaterialType("Grass", 1.1f, Color.green),
+                new NavmeshMaterialType("Rock", 2f, Color.black),
+                new NavmeshMaterialType("Ladder", 1.5f, Color.yellow, 0.1f),
+                new NavmeshMaterialType("Test", 1.5f, Color.cyan),
+                new NavmeshMaterialType("Test2", 1.5f, Color.magenta),
+                new NavmeshMaterialType("Test3", 1.5f, Color.white),
+            };
             
             entityManager.AddComponentData(entity, new NavmeshComponent
             (
                 plane.Size,
                 ExpectedVerts,
+                surfaceTypes,
                 MergePointDistance,
                 CollinearMargin
             ));

@@ -59,7 +59,7 @@ unsafe struct LctValidator
         var e = lct->GetEdgeEnumerator(true, true);
         while (e.MoveNext())
         {
-            if (e.Current->Constrained)
+            if (e.Current->IsConstrained)
                 continue;
 
             lct->CheckEdgeForDisturbances(e.Current, _disturbances);
@@ -83,7 +83,7 @@ unsafe struct LctValidator
         var e = lct->GetEdgeEnumerator(true, true);
         while (e.MoveNext())
         {
-            if (e.Current->Constrained)
+            if (e.Current->IsConstrained)
                 continue;
 
             var edge = e.Current;
@@ -94,7 +94,7 @@ unsafe struct LctValidator
                 continue;
 
             var entrance = edge->ONext;
-            if (!entrance->Constrained)
+            if (!entrance->IsConstrained)
             {
                 var clearance = GetLocalClearance(entrance->Dest->Point, b, c, edge, false);
                 if (edge->ClearanceRight == -1)
@@ -112,7 +112,7 @@ unsafe struct LctValidator
             }
 
             entrance = edge->OPrev;
-            if (!entrance->Constrained)
+            if (!entrance->IsConstrained)
             {
                 var clearance = GetLocalClearance(entrance->Dest->Point, b, c, edge, true);
                 if (edge->ClearanceLeft == -1)
@@ -251,7 +251,7 @@ unsafe struct LctValidator
         var e = lct->GetEdgeEnumerator(true, true);
         while (e.MoveNext())
         {
-            if (e.Current->Constrained)
+            if (e.Current->IsConstrained)
                 continue;
 
             var o = e.Current->Org->Point;

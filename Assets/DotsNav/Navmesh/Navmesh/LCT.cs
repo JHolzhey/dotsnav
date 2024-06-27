@@ -28,14 +28,14 @@ namespace DotsNav.Navmesh
             var f = Math.ProjectSeg2(o, d, b, out var bi);
 
             if (f >= 0 && f <= 1 &&
-                !lhs->Constrained && !rhs->Constrained &&
+                !lhs->IsConstrained && !rhs->IsConstrained &&
                 math.lengthsq(bi - b) < math.min(math.lengthsq(a - b), math.lengthsq(c - b)))
             {
                 lhs->ClearanceLeft = -1;
                 rhs->ClearanceRight = -1;
             }
 
-            if (f >= 0 && !rhs->Constrained)
+            if (f >= 0 && !rhs->IsConstrained)
             {
                 var r = Math.IntersectLineSegClamped(o, o + perp, b, (a + b) / 2);
                 Math.ProjectSeg2(o, d, r, out var ri);
@@ -43,7 +43,7 @@ namespace DotsNav.Navmesh
                     ResetClearance(o, d, rhs->Sym, perp);
             }
 
-            if (f <= 1 && !lhs->Constrained)
+            if (f <= 1 && !lhs->IsConstrained)
             {
                 var l = Math.IntersectLineSegClamped(d, d + perp, b, (c + b) / 2);
                 Math.ProjectSeg2(o, d, l, out var li);
@@ -54,7 +54,7 @@ namespace DotsNav.Navmesh
 
         internal void CheckEdgeForDisturbances(Edge* edge, NativeList<Disturbance> disturbances)
         {
-            if (!edge->ONext->Constrained && !edge->DNext->Constrained)
+            if (!edge->ONext->IsConstrained && !edge->DNext->IsConstrained)
             {
                 var a = edge->ONext->Dest->Point;
                 var b = edge->Org->Point;
@@ -63,7 +63,7 @@ namespace DotsNav.Navmesh
                     disturbances.Add(disturbance);
             }
 
-            if (!edge->OPrev->Constrained && !edge->DPrev->Constrained)
+            if (!edge->OPrev->IsConstrained && !edge->DPrev->IsConstrained)
             {
                 var a = edge->OPrev->Dest->Point;
                 var b = edge->Org->Point;
@@ -230,13 +230,13 @@ namespace DotsNav.Navmesh
                 return true;
             }
 
-            if (!next->Constrained && Math.IntersectSegSeg(p, vert, c, r2))
+            if (!next->IsConstrained && Math.IntersectSegSeg(p, vert, c, r2))
                 return TryGetDisturbance(next->Sym, r1, r2, c, out e, out u, out v, lhs);
 
             next = next->RNext;
             p = tri->Dest->Point;
 
-            if (!next->Constrained && Math.IntersectSegSeg(p, vert, r1, r2))
+            if (!next->IsConstrained && Math.IntersectSegSeg(p, vert, r1, r2))
                 return TryGetDisturbance(next->Sym, r1, r2, c, out e, out u, out v, lhs);
 
             e = default;
@@ -248,7 +248,7 @@ namespace DotsNav.Navmesh
         static Edge* TryGetConstraint(Edge* exit, double clearance, float2 corner, float2 mirror, bool lhs)
         {
             var edge = lhs ? exit->DNext : exit->DPrev->Sym;
-            if (edge->Constrained)
+            if (edge->IsConstrained)
                 return edge;
             return CheckTriForConstraint(edge, clearance, corner, mirror);
         }
@@ -271,7 +271,7 @@ namespace DotsNav.Navmesh
                   Math.IntersectSegCircle(s1, s2, mirror, clearance) == 2))
                 return null;
 
-            if (edge->IsObstacle) //edge->Constrained)
+            if (edge->MainEdgeType == Edge.Type.Obstacle) //edge->Constrained)
                 return edge;
 
             return CheckTriForConstraint(edge->Sym, clearance, corner, mirror);
@@ -279,7 +279,7 @@ namespace DotsNav.Navmesh
 
         public static Edge* TryGetConstraint(double clearance, double2 corner, Edge* edge)
         {
-            if (edge->IsObstacle) //edge->Constrained) // todo should we check distance here? We do so for any other constraint we find
+            if (edge->MainEdgeType == Edge.Type.Obstacle) //edge->Constrained) // todo should we check distance here? We do so for any other constraint we find
                 return edge;
             return CheckTriForConstraint(edge, clearance, corner);
         }
@@ -301,7 +301,7 @@ namespace DotsNav.Navmesh
             if (Math.IntersectSegCircle(s1, s2, corner, clearance) != 2)
                 return null;
 
-            if (edge->IsObstacle) // edge->Constrained)
+            if (edge->MainEdgeType == Edge.Type.Obstacle) // edge->Constrained)
                 return edge;
 
             return CheckTriForConstraint(edge->Sym, clearance, corner);
@@ -322,11 +322,11 @@ namespace DotsNav.Navmesh
         void Propagate(Edge* s, Edge* t)
         {
             var exit = t->LPrev;
-            if (!exit->ONext->Constrained && !exit->DNext->Constrained)
+            if (!exit->ONext->IsConstrained && !exit->DNext->IsConstrained)
                 CheckTraversal(t->Dest->Point, exit, false, s);
 
             exit = t->LNext->Sym;
-            if (!exit->OPrev->Constrained && !exit->DPrev->Constrained)
+            if (!exit->OPrev->IsConstrained && !exit->DPrev->IsConstrained)
                 CheckTraversal(t->Org->Point, exit, true, s);
         }
 
@@ -420,7 +420,7 @@ namespace DotsNav.Navmesh
         {
             var edge = tri;
 
-            if (!edge->Constrained)
+            if (!edge->IsConstrained)
             {
                 if (RhsDisturbed(edge, out vRef))
                     return true;
@@ -429,7 +429,7 @@ namespace DotsNav.Navmesh
             }
 
             edge = tri->LNext;
-            if (!edge->Constrained)
+            if (!edge->IsConstrained)
             {
                 if (RhsDisturbed(edge, out vRef))
                     return true;
@@ -438,7 +438,7 @@ namespace DotsNav.Navmesh
             }
 
             edge = tri->LNext->LNext;
-            if (!edge->Constrained)
+            if (!edge->IsConstrained)
             {
                 if (RhsDisturbed(edge, out vRef))
                     return true;
@@ -454,7 +454,7 @@ namespace DotsNav.Navmesh
         {
             edge->ClearanceLeft = -1;
 
-            if (!edge->OPrev->Constrained && !edge->DPrev->Constrained)
+            if (!edge->OPrev->IsConstrained && !edge->DPrev->IsConstrained)
             {
                 var a = edge->OPrev->Dest->Point;
                 var b = edge->Org->Point;
@@ -474,7 +474,7 @@ namespace DotsNav.Navmesh
         {
             edge->ClearanceRight = -1;
 
-            if (!edge->ONext->Constrained && !edge->DNext->Constrained)
+            if (!edge->ONext->IsConstrained && !edge->DNext->IsConstrained)
             {
                 var a = edge->ONext->Dest->Point;
                 var b = edge->Org->Point;
@@ -500,13 +500,13 @@ namespace DotsNav.Navmesh
             {
                 InfiniteLoopDetection.Register(1000, "TravsDisturbed 0");
 
-                if (check->Constrained)
+                if (check->IsConstrained)
                     break;
 
                 if (!Math.ProjectSeg(check->Org->Point, check->Dest->Point, v, out _))
                 {
                     check = check->OPrev->Sym;
-                    if (check->Constrained || !Math.ProjectSeg(check->Org->Point, check->Dest->Point, v, out _))
+                    if (check->IsConstrained || !Math.ProjectSeg(check->Org->Point, check->Dest->Point, v, out _))
                         break;
                 }
 
@@ -523,13 +523,13 @@ namespace DotsNav.Navmesh
             {
                 InfiniteLoopDetection.Register(1000, "TravsDisturbed 1");
 
-                if (check->Constrained)
+                if (check->IsConstrained)
                     break;
 
                 if (!Math.ProjectSeg(check->Org->Point, check->Dest->Point, v, out _))
                 {
                     check = check->ONext->Sym;
-                    if (check->Constrained || !Math.ProjectSeg(check->Org->Point, check->Dest->Point, v, out _))
+                    if (check->IsConstrained || !Math.ProjectSeg(check->Org->Point, check->Dest->Point, v, out _))
                         break;
                 }
 
@@ -548,7 +548,7 @@ namespace DotsNav.Navmesh
             var disturbances = new NativeList<Disturbance>(Allocator.Temp);
             var e = GetEdgeEnumerator(true, true); // True for now because only refining major edges
             while (e.MoveNext())
-                if (!e.Current->Constrained)
+                if (!e.Current->IsConstrained)
                     CheckEdgeForDisturbances(e.Current, disturbances);
 
             V.Clear();

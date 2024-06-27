@@ -9,6 +9,7 @@ using Unity.Entities.UniversalDelegates;
 using System.Linq.Expressions;
 using DotsNav.Drawing;
 using System;
+using System.Runtime.CompilerServices;
 
 namespace DotsNav.Navmesh
 {
@@ -56,10 +57,14 @@ namespace DotsNav.Navmesh
         // http://karlchenofhell.org/cppswp/lischinski.pdf
         void Swap(Edge* e)
         {
-            //UnityEngine.Debug.Log("Swap");
-            UnityEngine.Debug.Assert(!e->Constrained && e->EdgeType.HasNoFlagsB(Edge.Type.Obstacle | Edge.Type.Terrain) && !e->EdgeType.HasAllFlagsB(Edge.Type.Minor | Edge.Type.Clearance)
-                , $"Cannot flip a constrained edge. EdgeType: {e->EdgeType}, e->Constrained: {e->Constrained}");
-            
+            UnityEngine.Debug.Log("Swap");
+            UnityEngine.Debug.Assert(!e->IsConstrained && e->EdgeType.HasNoFlagsB(Edge.Type.Obstacle | Edge.Type.Terrain) && !e->EdgeType.HasAllFlagsB(Edge.Type.Minor | Edge.Type.Clearance),
+                $"Cannot flip a constrained edge. EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
+            UnityEngine.Debug.Assert(e->MaterialTypeIndex == e->Sym->MaterialTypeIndex, "Material Types are different!");
+
+            UnityEngine.Debug.Assert(e->MaterialTypeIndex == e->LNext->MaterialTypeIndex && e->LNext->MaterialTypeIndex == e->LPrev->MaterialTypeIndex, "edge Tri has unequal types");
+            UnityEngine.Debug.Assert(e->Sym->MaterialTypeIndex == e->Sym->LNext->MaterialTypeIndex && e->Sym->LNext->MaterialTypeIndex == e->Sym->LPrev->MaterialTypeIndex, "edge->Sym Tri has unequal types");
+
             bool isMajor = Edge.IsEdgeTypeMajor(e->EdgeType);
             Edge.VerifyEdge(e, isMajor);
 
@@ -97,8 +102,9 @@ namespace DotsNav.Navmesh
             DestroyedTriangle(e->TriangleId);
             DestroyedTriangle(e->Sym->TriangleId);
 
-            NewTriangle(e);
-            NewTriangle(e->Sym);
+            UnityEngine.Debug.Assert(MathLib.IsEpsEqual(e->MaterialTypeIndex, e->Sym->MaterialTypeIndex, 0.01f), "Material Types are different!");
+            NewTriangle(e, e->MaterialTypeIndex);
+            NewTriangle(e->Sym, e->MaterialTypeIndex);
         }
 
         static void SetEndPoints(Edge* edge, Vertex* org, Vertex* dest, bool isMajor)
@@ -143,13 +149,13 @@ namespace DotsNav.Navmesh
         // TriangulatePseudopolygonDelaunay()
         void RetriangulateFace(Edge* edge, bool isMajor)
         {
-            //UnityEngine.Debug.Log("RetriangulateFace");
+            UnityEngine.Debug.Log("RetriangulateFace");
             Assert.IsTrue(edge != null);
             Assert.IsTrue(edge != edge->LNext->LNext);
             // Should not Verify edge because it may not have been given a crep or added cid yet
             if (edge->LNext->LNext->LNext == edge)
             {
-                NewTriangle(edge); // Just inits TriangleIds
+                NewTriangle(edge, edge->MaterialTypeIndex);
                 return;
             }
 
@@ -176,12 +182,9 @@ namespace DotsNav.Navmesh
                     c = e;
             }
 
-            Edge.Type newConnectionEdgesType = Edge.Type.None;
-            if (isMajor) { // All Edges connecting to Major (i.e. an Obstacle) constraint are Clearance edges
-                newConnectionEdgesType = Edge.Type.Major | Edge.Type.Clearance;
-            } else { // All Edges connecting to Minor constraints are TerrainSub edges
-                newConnectionEdgesType = Edge.Type.Minor | Edge.Type.Ignore;
-            }
+            // All Edges connecting to Major (i.e. an Obstacle) constraint are Clearance edges
+            // All Edges connecting to Minor constraints are TerrainSub edges
+            Edge.Type newConnectionEdgesType = isMajor ? Edge.Type.Major | Edge.Type.Clearance : Edge.Type.Minor | Edge.Type.Ignore;
 
             Assert.IsTrue(c != edge);
             var connected = false;
@@ -193,6 +196,7 @@ namespace DotsNav.Navmesh
                 }
 
                 var b = Connect(edge->LPrev, c->LNext, newConnectionEdgesType, null);
+                b->MaterialTypeIndex = edge->MaterialTypeIndex;
                 Edge.VerifyEdge(b);
                 RetriangulateFace(b, isMajor);
                 connected = true;
@@ -206,13 +210,15 @@ namespace DotsNav.Navmesh
                 }
 
                 var a = Connect(c, edge->LNext, newConnectionEdgesType, null);
+                a->MaterialTypeIndex = edge->MaterialTypeIndex;
                 Edge.VerifyEdge(a);
                 RetriangulateFace(a, isMajor);
                 connected = true;
             }
 
-            if (connected)
-                NewTriangle(edge);
+            if (connected) {
+                NewTriangle(edge, edge->MaterialTypeIndex);
+            }
         }
 
         Edge* RemoveVertex(Vertex* vert, bool isMajor)
@@ -265,7 +271,7 @@ namespace DotsNav.Navmesh
         /// Returns an edge for which the specified point is contained within it's left face. If the point lies
         /// on an edge this edge is returned. If the point lies on a vertex an arbitrary edge with identical origin is returned.
         /// </summary>
-        public void FindTriangleContainingPoint(float2 p, out Edge* edgeMinor, out Edge* edgeMajor)
+        public void FindTrianglesContainingPoint(float2 p, out Edge* edgeMinor, out Edge* edgeMajor)
         {
             edgeMinor = FindTriangleContainingPoint(p, false, out _);
             edgeMajor = null;
@@ -281,17 +287,18 @@ namespace DotsNav.Navmesh
                 return;
             }
 
-            _openQueue.Clear();
+            // Breadth first search for the first majorEdge we can find // TODO: Make this Edge-Based
+            _openVertexQueue.Clear();
 
             int mark = NextMark;
-            EnqueueDest(ref _openQueue, edgeMinor, mark);
-            EnqueueDest(ref _openQueue, edgeMinor->LPrev, mark);
-            EnqueueDest(ref _openQueue, edgeMinor->LNext, mark);
+            EnqueueDest(ref _openVertexQueue, edgeMinor, mark);
+            EnqueueDest(ref _openVertexQueue, edgeMinor->LPrev, mark);
+            EnqueueDest(ref _openVertexQueue, edgeMinor->LNext, mark);
             int numSearches = 0;
-            while (_openQueue.Length > 0) // Breadth first search for the first majorEdge we can find
+            while (_openVertexQueue.Length > 0)
             {
                 numSearches++;
-                var vert = _openQueue.Dequeue();
+                Vertex* vert = _openVertexQueue.Dequeue();
                 var i = vert->GetEdgeEnumerator(false);
                 while (i.MoveNext())
                 {
@@ -301,16 +308,16 @@ namespace DotsNav.Navmesh
                         edgeMajor = i.Current->MajorEdge;
                         goto FoundEdgeMajor;
                     } else if (i.Current->Mark != mark) {
-                        EnqueueDest(ref _openQueue, i.Current, mark);
+                        EnqueueDest(ref _openVertexQueue, i.Current, mark);
                     }
                 }
             }
-            void EnqueueDest(ref UnsafePtrQueue<Vertex> openQueue, Edge* e, int mark) {
+            void EnqueueDest(ref UnsafeCircularQueue<Ptr<Vertex>> openVertexQueue, Edge* e, int mark) {
                 e->Mark = mark;
-                openQueue.Enqueue(e->Dest);
+                openVertexQueue.Enqueue(e->Dest);
             }
 FoundEdgeMajor:
-            // CommonLib.DebugVector(edgeMajor->Org->Point.XOY(), edgeMajor->SegVector.XOY()+new float3(0.007f), UnityEngine.Color.white, 0.008f, 0.03f);
+            // CommonLib.DebugVector(edgeMajor->Org->Point3D, edgeMajor->SegVector3D+new float3(0.007f), UnityEngine.Color.white, 0.008f, 0.03f);
             edgeMajor = FindTriangleContainingPoint(edgeMajor, edgeMajor->Org, p, false, out _);
         }
 
@@ -454,30 +461,28 @@ FoundEdgeMajor:
                 if (inEdge != null)
                 {
                     Assert.IsTrue(SplitIsRobust(p, inEdge));
-                    return InsertPointInEdge(p, inEdge, /* betterConstraintType */ newConstraintEdgeType, true, existingMajorVertex);
+                    return InsertPointInEdge(p, inEdge, newConstraintEdgeType, true, existingMajorVertex);
                 }
 
-                return InsertPointInFace(p, e, /* betterConstraintType */ newConstraintEdgeType, existingMajorVertex);
+                return InsertPointInFace(p, e, newConstraintEdgeType, existingMajorVertex);
             }
         }
 
         Vertex* InsertPointInEdge(float2 point, Edge* edge, Edge.Type newConstraintEdgeType, bool debugIsNewPoint, Vertex* existingMajorVertex = null)
         {
-            //UnityEngine.Debug.Log($"InsertPointInEdge; {newConstraintEdgeType}");
+            UnityEngine.Debug.Log($"InsertPointInEdge; {newConstraintEdgeType}");
 
             bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
             Edge.VerifyEdge(edge, isMajor);
 
-            const int NumFlip = 4;
-            // var flipStack = stackalloc Edge*[NumFlip] { edge->ONext->Sym, edge->DPrev->Sym, edge->OPrev, edge->DNext }; // Using stackalloc instead of _flipStack to avoid Major-Minor conflicts
-
+            const int NumFlips = 4;
             ref Collections.PtrStack<Edge> flipStackUsing = ref isMajor ? ref _flipStack : ref _flipStackMinor;
             flipStackUsing.Push(edge->ONext->Sym);
             flipStackUsing.Push(edge->DPrev->Sym);
             flipStackUsing.Push(edge->OPrev);
             flipStackUsing.Push(edge->DNext);
 
-            for (var i = 0; i < NumFlip; i++) {
+            for (var i = 0; i < NumFlips; i++) {
                 Assert.IsTrue(Math.Ccw(flipStackUsing[i]->Org->Point, flipStackUsing[i]->Dest->Point, point));
             }
 
@@ -517,6 +522,15 @@ FoundEdgeMajor:
 
             Edge* majorEdge = edge->MajorEdge;
             Edge.Type newSplitConstraintEdgesType = edge->EdgeType;
+            byte material = edge->MaterialTypeIndex;
+            byte symMaterial = edge->Sym->MaterialTypeIndex;
+                // CommonLib.DebugSeg(edge->Org->Point3D, edge->Dest->Point3D, UnityEngine.Color.blue, 0.002f, math.INFINITY, 0.065f);
+                // CommonLib.DebugSeg(edge->Sym->Org->Point3D, edge->Sym->Dest->Point3D, UnityEngine.Color.cyan, 0.002f, math.INFINITY, 0.065f);
+
+            if (material != symMaterial) {
+                UnityEngine.Debug.Log($"material: {material}, symMaterial: {symMaterial}");
+            }
+
             RemoveEdge(edge, false, isMajor);
 
 
@@ -529,9 +543,6 @@ FoundEdgeMajor:
             newEdge->QuadEdge->Crep = GetCrep(crep);
             Edge.VerifyEdge(newEdge);
             Splice(newEdge, e);
-
-                // float3 org = newEdge->Org->Point.XOY()+new float3(0.007f);
-                // CommonLib.DebugVector(org, newEdge->Dest->Point.XOY()+new float3(0.007f) - org, Edge.EdgeColors[newSplitConstraintEdgesType], 0.001f);
 
             if (isMajor) {
                 V.TryAdd((IntPtr) e->Dest);
@@ -552,8 +563,6 @@ FoundEdgeMajor:
             Edge.VerifyEdge(newEdge);
             e = newEdge->OPrev;
 
-                // float3 org2 = newEdge->Org->Point.XOY()+new float3(0.007f);
-                // CommonLib.DebugVector(org2, newEdge->Dest->Point.XOY()+new float3(0.007f) - org2, Edge.EdgeColors[newSplitConstraintEdgesType], 0.001f);
             if (isMajor) {
                 V.TryAdd((IntPtr) e->Dest);
                 V.TryAdd((IntPtr) newEdge->Sym->Org);
@@ -563,21 +572,26 @@ FoundEdgeMajor:
             Edge.VerifyEdge(debugE);
 
             var te = result->GetEdge(isMajor);
-            Edge.VerifyEdge(te);
-            NewTriangle(te);
-            te = te->ONext;
-            Edge.VerifyEdge(te);
-            NewTriangle(te);
-            te = te->ONext;
-            Edge.VerifyEdge(te);
-            NewTriangle(te);
-            te = te->ONext;
-            Edge.VerifyEdge(te);
-            NewTriangle(te);
+            NewTriangle(te, material);
 
-            // for (var i = 0; i < NumFlip; i++) {
-            //     _flipStack.Push(flipStack[i]);
-            // }
+                // CommonLib.DebugSeg(te->Org->Point3D, te->Dest->Point3D, UnityEngine.Color.green, 0.002f, math.INFINITY, 0.05f);
+            
+            te = te->ONext;
+            NewTriangle(te, symMaterial);
+
+                // CommonLib.DebugSeg(te->Org->Point3D, te->Dest->Point3D, UnityEngine.Color.white, 0.002f, math.INFINITY, 0.05f);
+            
+            te = te->ONext;
+            NewTriangle(te, symMaterial);
+
+                // CommonLib.DebugSeg(te->Org->Point3D, te->Dest->Point3D, UnityEngine.Color.yellow, 0.002f, math.INFINITY, 0.05f);
+            
+            te = te->ONext;
+            NewTriangle(te, material);
+
+                // CommonLib.DebugSeg(te->Org->Point3D, te->Dest->Point3D, UnityEngine.Color.red, 0.002f, math.INFINITY, 0.05f);
+            
+
             FlipEdges(point, isMajor);
             return result;
         }
@@ -593,28 +607,24 @@ FoundEdgeMajor:
 
         Vertex* InsertPointInFace(float2 p, Edge* edge, Edge.Type newConstraintEdgeType, Vertex* existingMajorVertex = null)
         {
-            //UnityEngine.Debug.Log($"InsertPointInFace; {newConstraintEdgeType}");
+            UnityEngine.Debug.Log($"InsertPointInFace; {newConstraintEdgeType}");
 
             bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
             Edge.VerifyEdge(edge, isMajor);
 
-            const int NumFlip = 3;
-            // var flipStack = stackalloc Edge*[NumFlip] { edge->ONext->Sym, edge, edge->DPrev->Sym }; // Using stackalloc instead of _flipStack to avoid Major-Minor conflicts
-            
+            const int NumFlips = 3;
             ref Collections.PtrStack<Edge> flipStackUsing = ref isMajor ? ref _flipStack : ref _flipStackMinor;
-
             flipStackUsing.Push(edge->ONext->Sym);
             flipStackUsing.Push(edge);
             flipStackUsing.Push(edge->DPrev->Sym);
 
-            for (var i = 0; i < NumFlip; i++) {
+            for (var i = 0; i < NumFlips; i++) {
                 Assert.IsTrue(Math.Ccw(flipStackUsing[i]->Org->Point, flipStackUsing[i]->Dest->Point, p));
             }
 
             DestroyedTriangle(edge->TriangleId);
 
             var result = existingMajorVertex != null ? existingMajorVertex : CreateVertex(p);
-
 
             if (isMajor) {
                 V.TryAdd((IntPtr) result);
@@ -625,6 +635,7 @@ FoundEdgeMajor:
 
             UnityEngine.Debug.Assert(MathLib.LogicalIf(isMajor, existingMajorVertex == null), $"newConstraintEdgeType: {newConstraintEdgeType}");
 
+            byte material = edge->MaterialTypeIndex;
             Edge.Type newConnectionEdgesType = Edge.Type.None;
             if (isMajor) { // All Edges connecting to Major (i.e. an Obstacle) constraint are Clearance edges
                 UnityEngine.Debug.Assert(newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle), $"newConstraintEdgeType: {newConstraintEdgeType}, edge->EdgeType: {edge->EdgeType}");
@@ -640,15 +651,12 @@ FoundEdgeMajor:
             var debugE = Connect(newEdge->OPrev, newEdge->Sym, newConnectionEdgesType, null);
 
             var te = result->GetEdge(isMajor);
-            NewTriangle(te);
+            NewTriangle(te, material);
             te = te->ONext;
-            NewTriangle(te);
+            NewTriangle(te, material);
             te = te->ONext;
-            NewTriangle(te);
+            NewTriangle(te, material);
 
-            // for (var i = 0; i < NumFlip; i++) {
-            //     _flipStack.Push(flipStack[i]);
-            // }
             FlipEdges(p, isMajor);
             return result;
         }
@@ -666,16 +674,16 @@ FoundEdgeMajor:
                 => $"Vert: {Vertex->ToString()}, P: {P}";
         }
 
-        void InsertSegment(Vertex* a, Vertex* b, Entity id, Edge.Type newConstraintEdgeType, Edge* majorEdge)
+        void InsertSegment(Vertex* a, Vertex* b, Entity cid, Edge.Type newConstraintEdgeType, Edge* majorEdge)
         {
             //UnityEngine.Debug.Log($"InsertSegment; {newConstraintEdgeType}");
             var dir = math.normalize(b->Point - a->Point);
-            InsertSegmentRecursive(a, b, id, dir, a->Point, b->Point, newConstraintEdgeType, majorEdge);
+            InsertSegmentRecursive(a, b, cid, dir, a->Point, b->Point, newConstraintEdgeType, majorEdge);
         }
 
-        void InsertSegmentRecursive(Vertex* a, Vertex* b, Entity id, float2 dir, float2 start, float2 end, Edge.Type newConstraintEdgeType, Edge* majorEdge)
+        void InsertSegmentRecursive(Vertex* a, Vertex* b, Entity cid, float2 dir, float2 start, float2 end, Edge.Type newConstraintEdgeType, Edge* majorEdge)
         {
-            //UnityEngine.Debug.Log($"InsertSegmentRecursive; {newConstraintEdgeType}");
+            UnityEngine.Debug.Log($"InsertSegmentRecursive; {newConstraintEdgeType}");
             _insertedPoints.Clear();
             _insertedPoints.Add(new Point {Vertex = a, P = a->Point});
 
@@ -687,41 +695,41 @@ FoundEdgeMajor:
                 if (!p0.Modified && !p1.Modified)
                 {
                     if (p0.FoundExisting || p1.FoundExisting) {
-                        //UnityEngine.Debug.Log("InsertSegmentRecursive - neither modified, both found existing");
-                        InsertSegmentRecursive(p0.Vertex, p1.Vertex, id, dir, start, end, newConstraintEdgeType, majorEdge);
+                        UnityEngine.Debug.Log("InsertSegmentRecursive - neither modified, both found existing");
+                        InsertSegmentRecursive(p0.Vertex, p1.Vertex, cid, dir, start, end, newConstraintEdgeType, majorEdge);
                     } else {
-                        //UnityEngine.Debug.Log("InsertSegmentRecursive - neither modified, neither found existing");
-                        InsertSegmentNoCrossConstraints(p0.Vertex, p1.Vertex, id, newConstraintEdgeType, majorEdge);
+                        UnityEngine.Debug.Log("InsertSegmentRecursive - neither modified, neither found existing");
+                        InsertSegmentNoCrossConstraints(p0.Vertex, p1.Vertex, cid, newConstraintEdgeType, majorEdge);
                     }
                 }
                 else if (p0.Modified && !p1.Modified)
                 {
                     if (GetSupport(p0.After + _e / 2 * dir, p1.P - _e * dir, dir, out var p))
                     {
-                        //UnityEngine.Debug.Log("InsertSegmentRecursive - p0 modified, insert point");
+                        UnityEngine.Debug.Log("InsertSegmentRecursive - p0 modified, insert point");
                         var after = InsertPoint(p, newConstraintEdgeType);
-                        InsertSegmentRecursive(after, p1.Vertex, id, dir, start, end, newConstraintEdgeType, majorEdge);
-                        _edgeSearch.Search(p0.Vertex, after, id, newConstraintEdgeType, majorEdge);
+                        InsertSegmentRecursive(after, p1.Vertex, cid, dir, start, end, newConstraintEdgeType, majorEdge);
+                        _edgeSearch.Search(p0.Vertex, after, cid, newConstraintEdgeType, majorEdge);
                     }
                     else
                     {
-                        //UnityEngine.Debug.Log("InsertSegmentRecursive - p0 modified");
-                        _edgeSearch.Search(p0.Vertex, p1.Vertex, id, newConstraintEdgeType, majorEdge);
+                        UnityEngine.Debug.Log("InsertSegmentRecursive - p0 modified");
+                        _edgeSearch.Search(p0.Vertex, p1.Vertex, cid, newConstraintEdgeType, majorEdge);
                     }
                 }
                 else if (!p0.Modified) // p1 modified
                 {
                     if (GetSupport(p1.Before - _e / 2 * dir, p0.P + _e * dir, -dir, out var p))
                     {
-                        //UnityEngine.Debug.Log("InsertSegmentRecursive - p1 modified, insert point");
+                        UnityEngine.Debug.Log("InsertSegmentRecursive - p1 modified, insert point");
                         var before = InsertPoint(p, newConstraintEdgeType);
-                        InsertSegmentRecursive(p0.Vertex, before, id, dir, start, end, newConstraintEdgeType, majorEdge);
-                        _edgeSearch.Search(before, p1.Vertex, id, newConstraintEdgeType, majorEdge);
+                        InsertSegmentRecursive(p0.Vertex, before, cid, dir, start, end, newConstraintEdgeType, majorEdge);
+                        _edgeSearch.Search(before, p1.Vertex, cid, newConstraintEdgeType, majorEdge);
                     }
                     else
                     {
-                        //UnityEngine.Debug.Log("InsertSegmentRecursive - p1 modified");
-                        _edgeSearch.Search(p0.Vertex, p1.Vertex, id, newConstraintEdgeType, majorEdge);
+                        UnityEngine.Debug.Log("InsertSegmentRecursive - p1 modified");
+                        _edgeSearch.Search(p0.Vertex, p1.Vertex, cid, newConstraintEdgeType, majorEdge);
                     }
                 }
                 else // both modified
@@ -729,17 +737,17 @@ FoundEdgeMajor:
                     if (GetSupport(p0.After + _e / 2 * dir, p1.P - _e * dir, dir, out var s1) &&
                         GetSupport(p1.Before - _e / 2 * dir, s1 + _e * dir, -dir, out var s2))
                     {
-                        //UnityEngine.Debug.Log("InsertSegmentRecursive - both modified, double insert point");
+                        UnityEngine.Debug.Log("InsertSegmentRecursive - both modified, double insert point");
                         var v0 = InsertPoint(s1, newConstraintEdgeType);
                         var v1 = InsertPoint(s2, newConstraintEdgeType);
-                        InsertSegmentRecursive(v0, v1, id, dir, start, end, newConstraintEdgeType, majorEdge);
-                        _edgeSearch.Search(p0.Vertex, v0, id, newConstraintEdgeType, majorEdge);
-                        _edgeSearch.Search(v1, p1.Vertex, id, newConstraintEdgeType, majorEdge);
+                        InsertSegmentRecursive(v0, v1, cid, dir, start, end, newConstraintEdgeType, majorEdge);
+                        _edgeSearch.Search(p0.Vertex, v0, cid, newConstraintEdgeType, majorEdge);
+                        _edgeSearch.Search(v1, p1.Vertex, cid, newConstraintEdgeType, majorEdge);
                     }
                     else
                     {
-                        //UnityEngine.Debug.Log("InsertSegmentRecursive - both modified");
-                        _edgeSearch.Search(p0.Vertex, p1.Vertex, id, newConstraintEdgeType, majorEdge);
+                        UnityEngine.Debug.Log("InsertSegmentRecursive - both modified");
+                        _edgeSearch.Search(p0.Vertex, p1.Vertex, cid, newConstraintEdgeType, majorEdge);
                     }
                 }
 
@@ -929,7 +937,7 @@ FoundEdgeMajor:
         }
 
         // Means: 'Insert Segment when there are no constraints between a and b'
-        void InsertSegmentNoCrossConstraints(Vertex* a, Vertex* b, Entity id, Edge.Type newConstraintEdgeType, Edge* majorEdge)
+        void InsertSegmentNoCrossConstraints(Vertex* a, Vertex* b, Entity cid, Edge.Type newConstraintEdgeType, Edge* majorEdge)
         {
             //UnityEngine.Debug.Log($"InsertSegmentNoCrossConstraints; {newConstraintEdgeType}");
             bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
@@ -937,12 +945,12 @@ FoundEdgeMajor:
 
             if (c != null)
             {
-                //UnityEngine.Debug.Log($"InsertSegmentNoCrossConstraints - Found existing edge");
+                UnityEngine.Debug.Log($"InsertSegmentNoCrossConstraints - Found existing edge");
                 if (isMajor) {
                     C.TryAdd((IntPtr) c);
                 }
-                if (!c->IsConstrainedBy(id)) {
-                    c->AddConstraint(id);
+                if (!c->IsConstrainedBy(cid)) {
+                    c->AddConstraint(cid);
                 }
                 ResetClearance(c);
                 OverwriteEdgeType(c, newConstraintEdgeType, majorEdge);
@@ -962,15 +970,15 @@ FoundEdgeMajor:
 
                 if (d < 0)
                 {
-                    //UnityEngine.Debug.Log("InsertSegmentNoCrossConstraints - Weird thing -> Removing edge");
-                    Assert.IsTrue(!e->Constrained);
+                    UnityEngine.Debug.Log("InsertSegmentNoCrossConstraints - Weird thing -> Removing edge");
+                    Assert.IsTrue(!e->IsConstrained);
                     RemoveEdge(e, true, isMajor);
                 }
                 else if (d == 0 && e->Dest != a)
                 {
                     var t = e->Dest;
-                    //UnityEngine.Debug.Log("InsertSegmentNoCrossConstraints - Connect");
-                    Connect(a, t, id, newConstraintEdgeType, majorEdge);
+                    UnityEngine.Debug.Log("InsertSegmentNoCrossConstraints - Connect 1");
+                    Connect(a, t, cid, newConstraintEdgeType, majorEdge);
                     a = t;
                 }
 
@@ -978,8 +986,8 @@ FoundEdgeMajor:
                 Edge.VerifyEdge(e);
             }
 
-            //UnityEngine.Debug.Log("InsertSegmentNoCrossConstraints - Connect #2");
-            Connect(a, b, id, newConstraintEdgeType, majorEdge);
+            UnityEngine.Debug.Log("InsertSegmentNoCrossConstraints - Connect 2");
+            Connect(a, b, cid, newConstraintEdgeType, majorEdge);
         }
 
         internal static void SetEdgeTypeMajor(Edge* edge, Edge.Type newEdgeType, Edge* majorEdge) {
@@ -987,7 +995,7 @@ FoundEdgeMajor:
 
             // Debug: // This might be fine:
             if (edge->MajorEdge != null && majorEdge != null) {
-                UnityEngine.Debug.Assert(edge->MajorEdge == majorEdge || edge->MajorEdge == majorEdge->Sym,
+                UnityEngine.Debug.Assert(edge->ContainsMajorEdge(majorEdge),
                     $"edge->MajorEdge: {(long)edge->MajorEdge}, majorEdge: {(long)majorEdge}, edge->MajorEdgeType: {edge->MajorEdge->EdgeType}, majorEdge->EdgeType: {majorEdge->EdgeType}");
             }
 
@@ -996,8 +1004,8 @@ FoundEdgeMajor:
             UnityEngine.Debug.Assert(existingEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance) && newEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)
                 , $"edgeType: {existingEdgeType}, newEdgeType: {newEdgeType}");
 
-            UnityEngine.Debug.Assert(MathLib.LogicalIf(edge->Constrained, newEdgeType.HasAllFlagsB(Edge.Type.Obstacle)));
-            UnityEngine.Debug.Assert(MathLib.LogicalIf(newEdgeType.HasAllFlagsB(Edge.Type.Clearance), !edge->Constrained));
+            UnityEngine.Debug.Assert(MathLib.LogicalIf(edge->IsConstrained, newEdgeType.HasAllFlagsB(Edge.Type.Obstacle)));
+            UnityEngine.Debug.Assert(MathLib.LogicalIf(newEdgeType.HasAllFlagsB(Edge.Type.Clearance), !edge->IsConstrained));
 
             edge->SetEdgeType(newEdgeType);
 
@@ -1014,7 +1022,7 @@ FoundEdgeMajor:
                 var i = currentMinorOrg->GetEdgeEnumerator(false);
                 while (i.MoveNext())
                 {
-                    if ((i.Current->MajorEdge == edge || i.Current->MajorEdge == edge->Sym) && i.Current->Sym != prevEdge)
+                    if (i.Current->ContainsMajorEdge(edge) && i.Current->Sym != prevEdge)
                     {
                         SetEdgeTypeMinor(i.Current, Edge.Type.Minor | (newEdgeType & ~Edge.Type.Major), edge);
                         currentMinorOrg = i.Current->Dest;
@@ -1036,7 +1044,7 @@ FoundEdgeMajor:
 
             // Debug: // This might be fine:
             if (edge->MajorEdge != null && majorEdge != null) {
-                UnityEngine.Debug.Assert(edge->MajorEdge == majorEdge || edge->MajorEdge == majorEdge->Sym,
+                UnityEngine.Debug.Assert(edge->ContainsMajorEdge(majorEdge),
                     $"edge->MajorEdge: {(long)edge->MajorEdge}, majorEdge: {(long)majorEdge}, edge->MajorEdgeType: {edge->MajorEdge->EdgeType}, majorEdge->EdgeType: {majorEdge->EdgeType}");
             }
 
@@ -1049,8 +1057,8 @@ FoundEdgeMajor:
             UnityEngine.Debug.Assert(MathLib.LogicalIf(edge->MajorEdge != null, existingEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)));
             UnityEngine.Debug.Assert(MathLib.LogicalIf(majorEdge != null, newEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)));
 
-            UnityEngine.Debug.Assert(MathLib.LogicalIf(edge->Constrained, newEdgeType.HasAllFlagsB(Edge.Type.Terrain)));
-            UnityEngine.Debug.Assert(MathLib.LogicalIf(newEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance | Edge.Type.Ignore), !edge->Constrained));
+            UnityEngine.Debug.Assert(MathLib.LogicalIf(edge->IsConstrained, newEdgeType.HasAllFlagsB(Edge.Type.Terrain)));
+            UnityEngine.Debug.Assert(MathLib.LogicalIf(newEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance | Edge.Type.Ignore), !edge->IsConstrained));
             
 
             edge->SetEdgeType(newEdgeType);
@@ -1083,7 +1091,7 @@ FoundEdgeMajor:
                     SetEdgeTypeMinor(edge, newConstraintEdgeType, majorEdge);
                 } else if (existingEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)) {
                     if (newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)) {
-                        UnityEngine.Debug.Assert(edge->MajorEdge == majorEdge || edge->MajorEdge == majorEdge->Sym);
+                        UnityEngine.Debug.Assert(edge->ContainsMajorEdge(majorEdge));
                     } else {
                         UnityEngine.Debug.Assert(existingEdgeType.HasAnyFlagsB(Edge.Type.Terrain));
                         UnityEngine.Debug.Assert(edge->MajorEdge != null && majorEdge == null);
@@ -1097,7 +1105,7 @@ FoundEdgeMajor:
             //UnityEngine.Debug.Log($"OverwriteEdgeType, newConstraintEdgeType: {newConstraintEdgeType}, EdgeType before: {existingEdgeType}, EdgeType after: {edge->EdgeType}");
         }
 
-        void Connect(Vertex* a, Vertex* b, Entity id, Edge.Type newConstraintEdgeType, Edge* majorEdge)
+        void Connect(Vertex* a, Vertex* b, Entity cid, Edge.Type newConstraintEdgeType, Edge* majorEdge)
         {
             bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
             var connection = GetConnection(a, b, isMajor);
@@ -1110,6 +1118,8 @@ FoundEdgeMajor:
                 }
 
                 connection = Connect(a, b, newConstraintEdgeType, majorEdge);
+                connection->MaterialTypeIndex = MaxMaterialType(connection->LNext->MaterialTypeIndex, connection->LPrev->MaterialTypeIndex);
+                connection->Sym->MaterialTypeIndex = MaxMaterialType(connection->Sym->LNext->MaterialTypeIndex, connection->Sym->LPrev->MaterialTypeIndex);
                 RetriangulateFace(connection, isMajor);
                 RetriangulateFace(connection->Sym, isMajor);
             } else {
@@ -1117,8 +1127,8 @@ FoundEdgeMajor:
             }
 
             // todo inline wasUnconstrained (so if moves above addconstraint)
-            var wasUnconstrained = !connection->Constrained;
-            connection->AddConstraint(id);
+            var wasUnconstrained = !connection->IsConstrained;
+            connection->AddConstraint(cid);
             if (wasUnconstrained) {
                 ResetClearance(connection);
             }
@@ -1129,7 +1139,7 @@ FoundEdgeMajor:
             Edge.VerifyEdge(connection);
         }
 
-        void Connect(Vertex* a, Vertex* b, UnsafeList<Entity> crep, Edge.Type newConstraintEdgeType, Edge* majorEdge)
+        void Connect(Vertex* a, Vertex* b, UnsafeList<Entity> crep, Edge.Type newConstraintEdgeType, Edge* majorEdge, byte material1, byte material2)
         {
             bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
             var connection = GetConnection(a, b, Edge.IsEdgeTypeMajor(newConstraintEdgeType));
@@ -1141,11 +1151,28 @@ FoundEdgeMajor:
                 }
 
                 connection = Connect(a, b, newConstraintEdgeType, majorEdge);
+
+
+                    byte material = MaxMaterialType(connection->LNext->MaterialTypeIndex, connection->LPrev->MaterialTypeIndex);
+                    byte symMaterial = MaxMaterialType(connection->Sym->LNext->MaterialTypeIndex, connection->Sym->LPrev->MaterialTypeIndex);
+                    // UnityEngine.Debug.Assert(material == material1, $"material: {material}, material1: {material1}");
+                    // UnityEngine.Debug.Assert(symMaterial == material2, $"symMaterial: {symMaterial}, material2: {material2}");
+
+                // connection->MaterialTypeIndex = material1 /* material; // 1*/;
+                // connection->Sym->MaterialTypeIndex = material2 /* symMaterial; // 1*/;
+
                 RetriangulateFace(connection, isMajor);
                 RetriangulateFace(connection->Sym, isMajor);
+                UnityEngine.Debug.Log($"Connect crep - Creating new connection");
             } else {
+                UnityEngine.Debug.Log($"Connect crep - Found existing connection");
+                // SetTriangleMaterialTypeIndex(connection, material1);
+                // SetTriangleMaterialTypeIndex(connection->Sym, material2);
                 OverwriteEdgeType(connection, newConstraintEdgeType, majorEdge);
             }
+
+            BFSEdgesSetMaterialType(connection, material1 /* 1 */, Entity.Null, true);
+            BFSEdgesSetMaterialType(connection->Sym, material2 /* 1 */, Entity.Null, true);
 
             connection->QuadEdge->Crep = crep;
             ResetClearance(connection);
@@ -1204,9 +1231,104 @@ FoundEdgeMajor:
 
             InsertSegment(vertMinor0, vertMinor1, MinorObstacleCid, newConstraintEdgeType, edgeMajor);
 
-            // TODO: Deal with point constraints -> Maybe don't have to since already dealt with by Clearance edges
+            // Point constraints are already dealt with by Clearance edges
         }
 
+        bool SetMaterialIfPolygon(Entity cid, byte materialTypeIndex) {
+            Vertex* firstVertex = (Vertex*) _constraints[cid];
+
+            // Vertex-based Depth first search for all (Quad)Edges of this constraint, figuring out cw/ccw, and then queueing the first face for BFS below
+            Edge* prevEdge = null;
+            Vertex* currentOrg = firstVertex;
+            int numSearches = 0;
+
+            float clockWiseSum = 0;
+            while (true)
+            {
+                numSearches++;
+                // CommonLib.CreatePrimitive(UnityEngine.PrimitiveType.Sphere, currentOrg->Point3D, new float3(0.035f, 0.01f, 0.035f), UnityEngine.Color.white);
+                int numOutgoingConstraintEdges = 0;
+                Edge* newPrevEdge = null;
+                var i = currentOrg->GetEdgeEnumerator(false);
+                while (i.MoveNext())
+                {                    
+                    if (i.Current->IsConstrainedBy(cid)) {
+                        numOutgoingConstraintEdges++;
+
+                        if (i.Current->Sym != prevEdge) { // prevEdge may be unneccesary in other spot with IsPrimary
+
+                            float2 p1 = currentOrg->Point;
+                            float2 p2 = i.Current->Dest->Point;
+
+                            clockWiseSum += (p2.x - p1.x) * (p2.y + p1.y);
+
+                            currentOrg = i.Current->Dest;
+                            newPrevEdge = i.Current; // Not setting prevEdge because it will break subsequent iterations
+                        }
+                    }
+                }
+                if (numOutgoingConstraintEdges != 2) {
+                    return false;
+                }
+
+                prevEdge = newPrevEdge;
+
+                // If the following hits, we have reached the end and will break
+                if (currentOrg == firstVertex || numSearches > 100) {
+                    Assert.IsTrue(numSearches < 100, $"{numSearches}");
+                    prevEdge = clockWiseSum > 0 ? prevEdge->Sym : prevEdge;
+
+                    BFSEdgesSetMaterialType(prevEdge, materialTypeIndex, cid, false);
+
+                    // CommonLib.DebugSeg(prevEdge->Org->Point3D, prevEdge->Dest->Point3D, UnityEngine.Color.blue, 0.025f, math.INFINITY, 0.1f);
+                    break;
+                }
+            }
+            return true;
+        }
+
+        void BFSEdgesSetMaterialType(Edge* initialEdge, byte materialTypeIndex, Entity boundaryCid, bool isStopIfSameIndex, int blah = 0) // If boundaryCid == Entity.Null, BFS stops at any constrained edge
+        {
+            _openEdgeQueue.Clear();
+
+            int mark = NextMark;
+            SetTriangleMaterialTypeIndex(initialEdge, materialTypeIndex);
+            _openEdgeQueue.Enqueue(initialEdge->ONext);
+            _openEdgeQueue.Enqueue(initialEdge->DPrev);
+
+            if (isStopIfSameIndex) {
+                UnityEngine.Color initialColor = MaterialTypes[materialTypeIndex].color;
+                initialColor = (initialColor.ToFloat4() * 0.5f).ToColor();
+                // CommonLib.DebugSeg(initialEdge->Org->Point3D, initialEdge->Dest->Point3D, initialColor, 0.025f, math.INFINITY, 0.13f);
+                // CommonLib.CreateDebugUI(blah, MathLib.Midpoint(initialEdge->Org->Point3D, initialEdge->Dest->Point3D) + math.up());
+            }
+
+            while (_openEdgeQueue.Length > 0)
+            {
+                Edge* edge = _openEdgeQueue.Dequeue();
+                if (edge->Mark != mark && (boundaryCid != Entity.Null ? !edge->IsConstrainedBy(boundaryCid) : !edge->IsConstrained)) {
+                    SetTriangleMaterialTypeIndex(edge, materialTypeIndex);
+                    /* if (isStopIfSameIndex && edge->MaterialTypeIndex == materialTypeIndex && edge->Sym->MaterialTypeIndex == materialTypeIndex) {
+                        UnityEngine.Debug.Assert(edge->Sym->MaterialTypeIndex == materialTypeIndex);
+                        UnityEngine.Debug.Assert(edge->MaterialTypeIndex == edge->LNext->MaterialTypeIndex && edge->LNext->MaterialTypeIndex == edge->LPrev->MaterialTypeIndex);
+                        UnityEngine.Color color = MaterialTypes[edge->MaterialTypeIndex].color;
+                        color = (color.ToFloat4() * 0.2f).ToColor();
+                        // CommonLib.DebugSeg(edge->Org->Point3D, edge->Dest->Point3D, color, 0.025f, math.INFINITY, 0.1f);
+                        // CommonLib.CreateDebugUI(blah, MathLib.Midpoint(edge->Org->Point3D, edge->Dest->Point3D) + math.up());
+                        continue;
+                    } */
+                    if (isStopIfSameIndex) {
+                        // CommonLib.DebugSeg(edge->Org->Point3D, edge->Dest->Point3D, MaterialTypes[edge->MaterialTypeIndex].color, 0.025f, math.INFINITY, 0.07f);
+                        // CommonLib.CreateDebugUI(blah, MathLib.Midpoint(edge->Org->Point3D, edge->Dest->Point3D) + math.up());
+                    }
+                    // CommonLib.DebugSeg(edge->Org->Point3D, edge->Dest->Point3D, UnityEngine.Color.yellow, 0.025f, math.INFINITY, 0.1f);
+                    _openEdgeQueue.Enqueue(edge->ONext);
+                    _openEdgeQueue.Enqueue(edge->DPrev);
+                    edge->Mark = mark;
+                }
+            }
+            // bool IsTriangleMarked(Edge* e) => e->Mark != mark && e->LNext->Mark != mark && e->LPrev->Mark != mark;
+        }
 
         internal void InsertMajor(float2* points, int start, int amount, Entity cid, float4x4 ltw, Edge.Type newConstraintEdgeType = Edge.Type.Obstacle) {
             Edge.VerifyEdgeType(Edge.Type.Major | newConstraintEdgeType, true);
@@ -1217,8 +1339,17 @@ FoundEdgeMajor:
             Edge.VerifyEdgeType(Edge.Type.Minor | newConstraintEdgeType, false);
             Insert(points, start, amount, cid, ltw, Edge.Type.Minor | newConstraintEdgeType);
         }
+
+        internal void InsertMinorCost(float2* points, int start, int amount, Entity cid, byte materialTypeIndex, float4x4 ltw, Edge.Type newConstraintEdgeType = Edge.Type.Terrain)
+        {
+            InsertMinor(points, start, amount, cid, ltw, newConstraintEdgeType);
+            bool isPolygon = SetMaterialIfPolygon(cid, materialTypeIndex);
+            if (!isPolygon) {
+                UnityEngine.Debug.LogWarning($"Non polygonal constraint set. Could make this intended in the future?");
+            }
+        }
         
-        void Insert(float2* points, int start, int amount, Entity cid, float4x4 ltw, Edge.Type newConstraintEdgeType = Edge.Type.Major | Edge.Type.Obstacle)
+        void Insert(float2* points, int start, int amount, Entity cid, float4x4 ltw, Edge.Type newConstraintEdgeType)
         {
             //UnityEngine.Debug.Log($"Insert; {newConstraintEdgeType}");
             Vertex* lastVert = null;
@@ -1247,16 +1378,17 @@ FoundEdgeMajor:
                 lastVert = vert;
             }
 
-            if (point != null)
+            if (point != null) {
                 ++point->PointConstraints;
+            }
         }
 
-        void AssertDestDoesntContainMajorEdge(Edge* removedEdgeMajor)
+        void AssertDestDoesntContainMajorEdge(Edge* removedMajorEdge)
         {
-            var i = removedEdgeMajor->Dest->GetEdgeEnumerator(false);
+            var i = removedMajorEdge->Dest->GetEdgeEnumerator(false);
             while (i.MoveNext()) {
                 Edge.VerifyEdge(i.Current);
-                if (i.Current->MajorEdge == removedEdgeMajor) {
+                if (i.Current->ContainsMajorEdge(removedMajorEdge)) {
                     Assert.IsTrue(false, "Dest shouldn't contain it");
                 }
             }
@@ -1284,7 +1416,7 @@ FoundEdgeMajor:
                 while (i.MoveNext())
                 {
                     Edge.VerifyEdge(i.Current, false);
-                    if ((i.Current->MajorEdge == removedMajorEdge || i.Current->MajorEdge == removedMajorEdge->Sym) && i.Current->Sym != prevEdge)
+                    if (i.Current->ContainsMajorEdge(removedMajorEdge) && i.Current->Sym != prevEdge)
                     {
                         _elistMinor.Add((IntPtr) i.Current);
                         currentMinorOrg = i.Current->Dest;
@@ -1309,7 +1441,6 @@ FoundEdgeMajor:
             for (var i = 0; i < _elistMinor.Length; i++) // Add vertices of minor edges to list for potential removal
             {
                 var edge = (Edge*) _elistMinor[i];
-
                 if (edge->Dest->PointConstraints == 0) {
                     _vlistMinor.Add((IntPtr) edge->Dest);
                 }
@@ -1346,7 +1477,7 @@ FoundEdgeMajor:
 
                 edge->MajorEdge = null;
 
-                if (edge->Constrained) {
+                if (edge->IsConstrained) {
                     SetEdgeTypeMinor(edge, Edge.Type.Minor | Edge.Type.Terrain, null);
                 } else {
                     SetEdgeTypeMinor(edge, Edge.Type.Minor | Edge.Type.Ignore, null);
@@ -1369,36 +1500,14 @@ FoundEdgeMajor:
                 } */
             }
 
-            for (var i = 0; i < _vlistMinor.Length; i++)
+            for (var i = 0; i < _vlistMinor.Length; i++) {
                 RemoveVertexIfEligible((Vertex*) _vlistMinor[i], false);
+            }
         }
 
-
-        internal void RemoveConstraintMajor(Entity id, Edge.Type constraintEdgeType = Edge.Type.Obstacle) {
-            Edge.VerifyEdgeType(Edge.Type.Major | constraintEdgeType, true);
-            RemoveConstraint(id, true, Edge.Type.Major | constraintEdgeType, Edge.Type.Major | Edge.Type.Clearance);
-        }
-
-        internal void RemoveConstraintMinor(Entity id, Edge.Type constraintEdgeType = Edge.Type.Terrain) {
-            Edge.VerifyEdgeType(Edge.Type.Minor | constraintEdgeType, false);
-            RemoveConstraint(id, false, Edge.Type.Minor | constraintEdgeType, Edge.Type.Minor | Edge.Type.Ignore);
-        }
-
-        void RemoveConstraint(Entity id, bool isMajor, Edge.Type constraintEdgeType, Edge.Type newReplacementEdgeType)
-        {
-            //UnityEngine.Debug.Log("RemoveConstraint");
-            _vlist.Clear();
-            _elist.Clear();
-
-            Assert.IsTrue(_constraints.ContainsKey(id), "Attempting to remove an unknown or static obstacle");
-            var v = (Vertex*) _constraints[id];
-            Assert.IsTrue(v->GetEdge(isMajor) != null);
-            Assert.IsTrue(v->ConstraintHandles > 0);
-            --v->ConstraintHandles;
-            _constraints.Remove(id);
-
-            int mark = NextMark;
-            _openStack.Push(v);
+        void DFSConstraintEdges(Vertex* initialVertex, int mark, bool isMajor, Entity cid, ref UnsafeList<IntPtr> constraintEdges) {
+            Assert.IsTrue(_openStack.Count == 0 && mark == _mark);
+            _openStack.Push(initialVertex);
             while (_openStack.Count > 0) // Depth first search for all (Quad)Edges of this constraint
             {
                 var vert = _openStack.Pop();
@@ -1406,14 +1515,43 @@ FoundEdgeMajor:
                 while (i.MoveNext())
                 {
                     Edge.VerifyEdge(i.Current, isMajor);
-                    if (i.Current->IsConstrainedBy(id) && i.Current->Mark != mark)
+                    if (i.Current->IsConstrainedBy(cid) && i.Current->Mark != mark)
                     {
-                        _elist.Add((IntPtr) i.Current);
+                        constraintEdges.Add((IntPtr) i.Current);
                         i.Current->Mark = mark;
                         _openStack.Push(i.Current->Dest);
                     }
                 }
             }
+        }
+
+
+        internal void RemoveConstraintMajor(Entity cid, Edge.Type constraintEdgeType = Edge.Type.Obstacle) {
+            Edge.VerifyEdgeType(Edge.Type.Major | constraintEdgeType, true);
+            RemoveConstraint(cid, true, Edge.Type.Major | constraintEdgeType, Edge.Type.Major | Edge.Type.Clearance);
+        }
+
+        internal void RemoveConstraintMinor(Entity cid, Edge.Type constraintEdgeType = Edge.Type.Terrain) {
+            Edge.VerifyEdgeType(Edge.Type.Minor | constraintEdgeType, false);
+            RemoveConstraint(cid, false, Edge.Type.Minor | constraintEdgeType, Edge.Type.Minor | Edge.Type.Ignore);
+        }
+
+        void RemoveConstraint(Entity cid, bool isMajor, Edge.Type constraintEdgeType, Edge.Type newReplacementEdgeType)
+        {
+            //UnityEngine.Debug.Log("RemoveConstraint");
+            _vlist.Clear();
+            _elist.Clear();
+
+            Assert.IsTrue(_constraints.ContainsKey(cid), "Attempting to remove an unknown or static obstacle");
+            Vertex* v = (Vertex*) _constraints[cid];
+            Assert.IsTrue(v->GetEdge(isMajor) != null);
+            Assert.IsTrue(v->ConstraintHandles > 0);
+            --v->ConstraintHandles;
+            _constraints.Remove(cid);
+
+            int mark = NextMark;
+
+            DFSConstraintEdges(v, mark, isMajor, cid, ref _elist);
 
             if (_elist.Length == 0) // If no edges to this constraint, then this must be a point constraint
             {
@@ -1453,9 +1591,9 @@ FoundEdgeMajor:
                     UnityEngine.Debug.Assert(MathLib.LogicalIf(!Edge.IsEdgeTypeMajor(edge->EdgeType) && edge->MajorEdge != null,
                         edge->EdgeType.HasAllFlagsB(Edge.Type.Minor | Edge.Type.Obstacle) || edge->EdgeType.HasAllFlagsB(Edge.Type.Minor | Edge.Type.Clearance)), $"edge->EdgeType: {edge->EdgeType}");
 
-                    edge->RemoveConstraint(id); // Only remove Entity Id of removed obstacle from edge's list
+                    edge->RemoveConstraint(cid); // Only remove Entity Id of removed obstacle from edge's list
 
-                    if (!edge->Constrained) // If no other constraints attached to this edge then it can be flipped to satisfy delaunay
+                    if (!edge->IsConstrained) // If no other constraints attached to this edge then it can be flipped to satisfy delaunay
                     {
                         // TODO: RefineFailed for Minor? ResetClearance?
                         edge->RefineFailed = false;
@@ -1473,7 +1611,6 @@ FoundEdgeMajor:
                                 UnityEngine.Debug.Assert((edge->EdgeType & ~Edge.Type.Minor) == (edge->MajorEdge->EdgeType & ~Edge.Type.Major),
                                     $"edge->EdgeType: {edge->EdgeType}, edge->MajorEdge->EdgeType: {edge->MajorEdge->EdgeType}");
 
-                                // TODO: Could also do nothing
                                 SetEdgeTypeMinor(edge, Edge.Type.Minor | (edge->MajorEdge->EdgeType & ~Edge.Type.Major), edge->MajorEdge);
                             } else { // If no Major, just replace with Minor TerrainSub
                                 SetEdgeTypeMinor(edge, newReplacementEdgeType, null);
@@ -1481,20 +1618,23 @@ FoundEdgeMajor:
                             
                             _flipStackMinor.Push(edge);
                         }
-
+                        byte minMaterialType = MinMaterialType(edge->MaterialTypeIndex, edge->Sym->MaterialTypeIndex);
+                        SetTriangleMaterialTypeIndex(edge, minMaterialType);
+                        SetTriangleMaterialTypeIndex(edge->Sym, minMaterialType);
                         FlipQuad(isMajor);
                     }
                     Edge.VerifyEdge(edge, isMajor);
                 }
             }
 
-            for (var i = 0; i < _vlist.Length; i++)
-                RemoveVertexIfEligible((Vertex*) _vlist[i], isMajor);
+            for (var i = 0; i < _vlist.Length; i++) {
+                RemoveVertexIfEligible((Vertex*) _vlist[i], isMajor, i);
+            }
         }
 
-        void RemoveVertexIfEligible(Vertex* v, bool isMajor)
+        void RemoveVertexIfEligible(Vertex* v, bool isMajor, int blah = 0)
         {
-            //UnityEngine.Debug.Log("RemoveVertexIfEligible");
+            UnityEngine.Debug.Log("RemoveVertexIfEligible");
             if (v->PointConstraints > 0 || v->ConstraintHandles > 0) { // If v is a point constraint or if v holds reference to a constraint then don't remove
                 return;
             }
@@ -1522,13 +1662,19 @@ FoundEdgeMajor:
 
             if (amount == 0) // If v not connected to any constraint edges, remove it, and fix the face affected
             {
-                if (isMajor) {
-                    e = v->GetEdgeEnumerator(isMajor);
-                    while (e.MoveNext()) {
+                UnityEngine.Debug.Log("Remove in face");
+                e = v->GetEdgeEnumerator(isMajor);
+                byte minMaterialType = byte.MaxValue;
+                while (e.MoveNext()) {
+                    if (isMajor) {
                         V.TryAdd((IntPtr) e.Current->Dest);
                     }
+                    minMaterialType = MinMaterialType(MinMaterialType(minMaterialType, e.Current->Sym->MaterialTypeIndex), e.Current->MaterialTypeIndex);
                 }
                 var face = RemoveVertex(v, isMajor);
+                face->MaterialTypeIndex = minMaterialType; // 5
+                // face->MaterialTypeIndex = MinMaterialType(face->LNext->MaterialTypeIndex, face->LPrev->MaterialTypeIndex); // TODO: Not sure if this will work
+
                 RetriangulateFace(face, isMajor);
                 return;
             }
@@ -1541,7 +1687,7 @@ FoundEdgeMajor:
             var e1 = constrained[0];
             var e2 = constrained[1];
             UnityEngine.Debug.Assert(e1->EdgeType == e2->EdgeType, $"e1->EdgeType: {e1->EdgeType}, e2->EdgeType: {e2->EdgeType}");
-            UnityEngine.Debug.Assert(e1->MajorEdge == e2->MajorEdge, $"e1->EdgeType: {e1->EdgeType}, e2->EdgeType: {e2->EdgeType}");
+            UnityEngine.Debug.Assert(e1->ContainsMajorEdge(e2->MajorEdge) && e2->ContainsMajorEdge(e1->MajorEdge), $"e1->EdgeType: {e1->EdgeType}, e2->EdgeType: {e2->EdgeType}");
             Assert.IsTrue(e1->Dest != v && e2->Dest != v);
             Assert.IsTrue(e1->Dest != e2->Dest);
             var d1 = e1->Dest->Point;
@@ -1556,15 +1702,22 @@ FoundEdgeMajor:
                         V.TryAdd((IntPtr) e.Current->Dest);
                     }
                 }
-
+                UnityEngine.Debug.LogError($"collinear == 0");
+                UnityEngine.Debug.Assert(e1->ContainsMajorEdge(e2->MajorEdge) && e2->ContainsMajorEdge(e1->MajorEdge));
+                UnityEngine.Debug.Assert(e1->MaterialTypeIndex == e2->Sym->MaterialTypeIndex && e1->Sym->MaterialTypeIndex == e2->MaterialTypeIndex, 
+                    $"collinear - e1->MaterialTypeIndex (yellow): {e1->MaterialTypeIndex}, e2->MaterialTypeIndex (green): {e2->MaterialTypeIndex}, e1->Sym->MaterialTypeIndex (red): {e1->Sym->MaterialTypeIndex}, e2->Sym->MaterialTypeIndex (blue): {e2->Sym->MaterialTypeIndex}");
                 var v1 = e1->Dest;
                 var v2 = e2->Dest;
                 var crep = e1->QuadEdge->Crep;
+                byte sameMaterial1 = e1->MaterialTypeIndex;
+                byte sameMaterial2 = e2->MaterialTypeIndex;
                 Edge* sameMajorEdge = e1->MajorEdge;
                 Edge.Type sameEdgeType = e1->EdgeType;
                 RemoveEdge(e1, false, isMajor);
                 RemoveVertex(v, isMajor);
                 var e3 = Connect(v1, v2, sameEdgeType, sameMajorEdge);
+                e3->MaterialTypeIndex = sameMaterial2;
+                e3->Sym->MaterialTypeIndex = sameMaterial1;
                 RetriangulateFace(e3, isMajor);
                 RetriangulateFace(e3->Sym, isMajor);
                 e3->QuadEdge->Crep = crep;
@@ -1583,7 +1736,8 @@ FoundEdgeMajor:
                                 V.TryAdd((IntPtr) e.Current->Dest);
                             }
                         }
-                        RemoveSemiCollinear(v, e1, e2, isMajor);
+                        UnityEngine.Debug.Log($"Collinearity: {t}");
+                        RemoveSemiCollinear(v, e1, e2, isMajor, blah);
                     }
                 }
                 else if (t > -_collinearMargin && Math.TriArea(d1, d2, e1->DNext->Org->Point) > 0 && Math.TriArea(d1, d2, e2->DPrev->Org->Point) > 0)
@@ -1594,15 +1748,28 @@ FoundEdgeMajor:
                             V.TryAdd((IntPtr) e.Current->Dest);
                         }
                     }
-                    RemoveSemiCollinear(v, e1, e2, isMajor);
+                    UnityEngine.Debug.Log($"Collinearity: {t}");
+                    RemoveSemiCollinear(v, e1, e2, isMajor, blah);
                 }
             }
         }
 
-        void RemoveSemiCollinear(Vertex* v, Edge* e1, Edge* e2, bool isMajor)
+        void RemoveSemiCollinear(Vertex* v, Edge* e1, Edge* e2, bool isMajor, int blah = 0)
         {
-            //UnityEngine.Debug.Log($"RemoveSemiCollinear");
-            UnityEngine.Debug.Assert(e1->MajorEdge == e2->MajorEdge);
+            UnityEngine.Debug.Log($"RemoveSemiCollinear");
+            UnityEngine.Debug.Assert(e1->ContainsMajorEdge(e2->MajorEdge) && e2->ContainsMajorEdge(e1->MajorEdge));
+            UnityEngine.Debug.Assert(e1->MaterialTypeIndex == e2->Sym->MaterialTypeIndex && e1->Sym->MaterialTypeIndex == e2->MaterialTypeIndex, 
+                $"e1->MaterialTypeIndex (yellow): {e1->MaterialTypeIndex}, e2->MaterialTypeIndex (green): {e2->MaterialTypeIndex}, e1->Sym->MaterialTypeIndex (red): {e1->Sym->MaterialTypeIndex}, e2->Sym->MaterialTypeIndex (blue): {e2->Sym->MaterialTypeIndex}");
+
+            if (!(e1->MaterialTypeIndex == e2->Sym->MaterialTypeIndex && e1->Sym->MaterialTypeIndex == e2->MaterialTypeIndex)) {
+                // CommonLib.DebugSeg(e1->Org->Point3D, e1->Dest->Point3D, UnityEngine.Color.yellow, 0.01f, math.INFINITY, 0.035f);
+                // CommonLib.DebugSeg(e1->Sym->Org->Point3D, e1->Sym->Dest->Point3D, UnityEngine.Color.red, 0.01f, math.INFINITY, 0.035f);
+                // CommonLib.DebugSeg(e2->Org->Point3D, e2->Dest->Point3D, UnityEngine.Color.green, 0.01f, math.INFINITY, 0.035f);
+                // CommonLib.DebugSeg(e2->Sym->Org->Point3D, e2->Sym->Dest->Point3D, UnityEngine.Color.blue, 0.01f, math.INFINITY, 0.035f);
+            }
+
+            byte sameMaterial1 = e1->MaterialTypeIndex;
+            byte sameMaterial2 = e2->MaterialTypeIndex;
             Edge* sameMajorEdge = e1->MajorEdge;
             Edge.Type sameEdgeType = e1->EdgeType;
             var crep = GetCrep(e1->QuadEdge->Crep);
@@ -1612,8 +1779,8 @@ FoundEdgeMajor:
             Edge.VerifyEdge(e2, isMajor);
             e1->QuadEdge->Crep.Clear();
             e2->QuadEdge->Crep.Clear();
-            if (isMajor) { // TODO: Why are we doing this?
-                SetEdgeTypeMajor(e1, Edge.Type.Major | Edge.Type.Clearance, e1->MajorEdge);
+            if (isMajor) { // TODO: Set the MajorEdges null here, since they could be flipped and kept and will no longer be in right place. Major edge should be set in InsertNoCross
+                SetEdgeTypeMajor(e1, Edge.Type.Major | Edge.Type.Clearance, e1->MajorEdge); // TODO: Why are we doing this? I think because these edges could be flipped away and not removed
                 SetEdgeTypeMajor(e2, Edge.Type.Major | Edge.Type.Clearance, e2->MajorEdge);
                 _flipStack.Push(e1);
                 _flipStack.Push(e2);
@@ -1623,15 +1790,25 @@ FoundEdgeMajor:
                 _flipStackMinor.Push(e1);
                 _flipStackMinor.Push(e2);
             }
+            // SetTriangleMaterialTypeIndex(e1, 6); // 0 instead
+            // SetTriangleMaterialTypeIndex(e2, 6);
+            // SetTriangleMaterialTypeIndex(e1->Sym, 6); // 0 instead
+            // SetTriangleMaterialTypeIndex(e2->Sym, 6);
+
             Edge.VerifyEdge(e1, isMajor);
             Edge.VerifyEdge(e2, isMajor);
             FlipQuad(isMajor); // First satisfy the delaunay of collinear edges then remove the vertex and retriangulate, and finally reinsert the constraint
-            var face1 = RemoveVertex(v, isMajor);
+            var face1 = RemoveVertex(v, isMajor); // e1 and e2 may have been flipped away from v and therefore not removed
+            // UnityEngine.Debug.Assert(e1->MaterialTypeIndex == face1->MaterialTypeIndex, $"e1->MaterialTypeIndex: {e1->MaterialTypeIndex}, face1->MaterialTypeIndex: {face1->MaterialTypeIndex}");
+
             RetriangulateFace(face1, isMajor);
-            InsertSegmentNoCrossConstraints(a, b, crep, sameEdgeType, sameMajorEdge);
+            UnityEngine.Debug.Log($"blah: {blah}");
+            // face1->MaterialTypeIndex = 0; //(byte)blah;
+            // CommonLib.DebugSeg(face1->Org->Point3D, face1->Dest->Point3D, UnityEngine.Color.blue, 0.01f, math.INFINITY, 0.035f);
+            InsertSegmentNoCrossConstraints(a, b, crep, sameEdgeType, sameMajorEdge, sameMaterial2, sameMaterial1, blah);
         }
 
-        void InsertSegmentNoCrossConstraints(Vertex* a, Vertex* b, UnsafeList<Entity> crep, Edge.Type newConstraintEdgeType, Edge* majorEdge)
+        void InsertSegmentNoCrossConstraints(Vertex* a, Vertex* b, UnsafeList<Entity> crep, Edge.Type newConstraintEdgeType, Edge* majorEdge, byte material1, byte material2, int blah = 0)
         {
             //UnityEngine.Debug.Log("InsertSegmentNoCrossConstraints crep +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
             bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
@@ -1639,10 +1816,23 @@ FoundEdgeMajor:
 
             if (c != null)
             {
+                UnityEngine.Debug.Log($"InsertSegmentNoCrossConstraints crep - Found connection");
                 if (isMajor) {
                     C.TryAdd((IntPtr) c);
                 }
                 c->QuadEdge->Crep = crep;
+
+                    byte material = MinMaterialType(c->LNext->MaterialTypeIndex, c->LPrev->MaterialTypeIndex);
+                    byte symMaterial = MinMaterialType(c->Sym->LNext->MaterialTypeIndex, c->Sym->LPrev->MaterialTypeIndex);
+                    // UnityEngine.Debug.Assert(material == material1, $"material: {material}, material1: {material1}");
+                    // UnityEngine.Debug.Assert(symMaterial == material2, $"symMaterial: {symMaterial}, material2: {material2}");
+
+                // SetTriangleMaterialTypeIndex(c, /* material); // */material1);
+                // SetTriangleMaterialTypeIndex(c->Sym, /* symMaterial); // */material2);
+
+                BFSEdgesSetMaterialType(c, material1 /* 2 */, Entity.Null, true, blah);
+                BFSEdgesSetMaterialType(c->Sym, material2 /* 4 */, Entity.Null, true, blah);
+
                 ResetClearance(c);
                 OverwriteEdgeType(c, newConstraintEdgeType, majorEdge);
                 return;
@@ -1660,20 +1850,23 @@ FoundEdgeMajor:
 
                 if (d < 0)
                 {
-                    Assert.IsTrue(!e->Constrained);
+                    Assert.IsTrue(!e->IsConstrained);
+                    UnityEngine.Debug.Log($"InsertSegmentNoCrossConstraints crep - RemoveEdge");
                     RemoveEdge(e, true, isMajor);
                 }
                 else if (d == 0 && e->Dest != a)
                 {
+                    UnityEngine.Debug.Log($"InsertSegmentNoCrossConstraints crep - Connect 1");
                     var t = e->Dest;
-                    Connect(a, t, GetCrep(crep), newConstraintEdgeType, majorEdge);
+                    Connect(a, t, GetCrep(crep), newConstraintEdgeType, majorEdge, material1, material2);
                     a = t;
                 }
 
                 e = next;
             }
 
-            Connect(a, b, crep, newConstraintEdgeType, majorEdge);
+            UnityEngine.Debug.Log($"InsertSegmentNoCrossConstraints crep - Connect 2");
+            Connect(a, b, crep, newConstraintEdgeType, majorEdge, material1, material2);
         }
 
         void FlipQuad(bool isMajor)
@@ -1751,13 +1944,7 @@ FoundEdgeMajor:
                 qe->Crep.Clear();
                 _creps.Push(qe->Crep);
             }
-
-            { // Debug so if function tries to access in future will throw null exception:
-                qe->Edge0.Org = null;
-                qe->Edge1.Org = null;
-                qe->Edge2.Org = null;
-                qe->Edge3.Org = null;
-            }
+            qe->Delete();
 
             _quadEdges.Recycle(qe);
         }
@@ -1810,12 +1997,20 @@ FoundEdgeMajor:
             beta->Next = temp4;
         }
 
-        void NewTriangle(Edge* e) // Just inits TriangleIds
+        void NewTriangle(Edge* e, byte materialTypeIndex) // Just inits TriangleIds
         {
             var tid = NextTriangleId;
             e->TriangleId = tid;
             e->LNext->TriangleId = tid;
             e->LPrev->TriangleId = tid;
+
+            SetTriangleMaterialTypeIndex(e, materialTypeIndex);
+        }
+
+        void SetTriangleMaterialTypeIndex(Edge* e, byte materialTypeIndex) {
+            e->MaterialTypeIndex = materialTypeIndex;
+            e->LNext->MaterialTypeIndex = materialTypeIndex;
+            e->LPrev->MaterialTypeIndex = materialTypeIndex;
         }
     }
 }

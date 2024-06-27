@@ -36,7 +36,8 @@ namespace DotsNav.Navmesh
         PtrStack<Edge> _flipStackMinor;
         UnsafeList<Point> _insertedPoints;
         PtrStack<Vertex> _openStack;
-        UnsafePtrQueue<Vertex> _openQueue;
+        UnsafeCircularQueue<Ptr<Vertex>> _openVertexQueue;
+        UnsafeCircularQueue<Ptr<Edge>> _openEdgeQueue;
         UnsafeList<IntPtr> _vlist;
         UnsafeList<IntPtr> _elist;
         UnsafeList<IntPtr> _vlistMinor;
@@ -45,6 +46,8 @@ namespace DotsNav.Navmesh
         internal HashSet<int> DestroyedTriangles;
         Deque<IntPtr> _refinementQueue;
 
+        internal UnsafeList<NavmeshMaterialType> MaterialTypes;
+        // internal FixedList128Bytes<float> MaterialTypeCosts;
         internal HashSet<IntPtr> AddedOrModifiedMajorEdges;
 
         internal readonly static Entity MinorObstacleCid = new Entity{Index = int.MinValue, Version = int.MinValue};
@@ -81,7 +84,8 @@ namespace DotsNav.Navmesh
             _flipStackMinor = new PtrStack<Edge>(32, Allocator.Persistent);
             _insertedPoints = new UnsafeList<Point>(64, Allocator.Persistent);
             _openStack = new PtrStack<Vertex>(64, Allocator.Persistent);
-            _openQueue = new UnsafePtrQueue<Vertex>(10, Allocator.Persistent);
+            _openVertexQueue = new UnsafeCircularQueue<Ptr<Vertex>>(16, Allocator.Persistent);
+            _openEdgeQueue = new UnsafeCircularQueue<Ptr<Edge>>(16, Allocator.Persistent);
             _vlist = new UnsafeList<IntPtr>(64, Allocator.Persistent);
             _elist = new UnsafeList<IntPtr>(64, Allocator.Persistent);
             _vlistMinor = new UnsafeList<IntPtr>(64, Allocator.Persistent);
@@ -94,12 +98,28 @@ namespace DotsNav.Navmesh
 
             AddedOrModifiedMajorEdges = new HashSet<IntPtr>(64, Allocator.Persistent);
 
+            // MaterialTypeCosts = new FixedList128Bytes<float>();
+            MaterialTypes = component.MaterialTypes;
+            MaterialTypes.Add(default);
+            for (int i = MaterialTypes.Length - 1; i > 0; i--) { // Inserting into the start so that Index of 0 is Default // TODO: Use Insert Extension
+                MaterialTypes[i] = MaterialTypes[i - 1];
+                UnityEngine.Debug.Log($"i: {i}, materialTypeIndex: {i - 1}, Material Color: {MaterialTypes[i - 1].color}");
+            }
+            MaterialTypes[0] = new NavmeshMaterialType("Default", 1f, UnityEngine.Color.gray);
+
+            for (int i = 0; i < MaterialTypes.Length; i++) {
+                UnityEngine.Debug.Log($"i: {i}, Material Color: {MaterialTypes[i].color}");
+            }
+
             _mark = default;
             _edgeId = default;
             _triangleId = default;
 
             BuildBoundingBoxes();
         }
+
+        public static byte MinMaterialType(byte material1, byte material2) { return material1 < material2 ? material1 : material2; }
+        public static byte MaxMaterialType(byte material1, byte material2) { return material1 > material2 ? material1 : material2; }
 
         void BuildBoundingBoxes()
         {
@@ -136,7 +156,7 @@ namespace DotsNav.Navmesh
             var topMinor = CreateEdge(topRight, topleft, Edge.Type.Minor | Edge.Type.Obstacle, top);
             var leftMinor = CreateEdge(topleft, bottomLeft, Edge.Type.Minor | Edge.Type.Obstacle, left);
 
-            bottomMinor->AddConstraint(MinorObstacleCid); // Could also just not Add a Constraint
+            bottomMinor->AddConstraint(MinorObstacleCid); // Could also just not Add a Constraint here, but helpful for clarity
             rightMinor->AddConstraint(MinorObstacleCid);
             topMinor->AddConstraint(MinorObstacleCid);
             leftMinor->AddConstraint(MinorObstacleCid);
@@ -160,10 +180,9 @@ namespace DotsNav.Navmesh
             UnityEngine.Debug.Log($"_modifiedMajorEdges.Length: {AddedOrModifiedMajorEdges.Length} =======================================================================================");
             foreach (IntPtr e in AddedOrModifiedMajorEdges) {
                 Edge* edge = (Edge*)e;
-                if (!Contains(edge->Org->Point) || !Contains(edge->Dest->Point)) {
-                    continue;
+                if (Contains(edge->Org->Point) && Contains(edge->Dest->Point)) {
+                    InsertMajorInMinor(edge);
                 }
-                InsertMajorInMinor(edge);
             }
 
             AddedOrModifiedMajorEdges.Clear();
@@ -194,7 +213,8 @@ namespace DotsNav.Navmesh
             _flipStack.Dispose();
             _insertedPoints.Dispose();
             _openStack.Dispose();
-            _openQueue.Dispose();
+            _openVertexQueue.Dispose();
+            _openEdgeQueue.Dispose();
             _vlist.Dispose();
             _elist.Dispose();
             _vlistMinor.Dispose();

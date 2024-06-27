@@ -1,7 +1,7 @@
 using Unity.Entities;
 using System.Collections.Generic;
 using Unity.Mathematics;
-using UnityEditor;
+using Unity.Collections.LowLevel.Unsafe;
 
 namespace DotsNav.Navmesh
 {
@@ -10,7 +10,7 @@ namespace DotsNav.Navmesh
     /// e.g. ONext will return the first edge in counter clockwise order around the origin, and OPrev will return the first edge in clockwise order.
     /// Updating the navmesh invalidates this structure.
     /// </summary>
-    public unsafe struct Edge
+    public unsafe struct Edge : IRefable
     {
         [System.Flags]
         public enum Type : byte {
@@ -23,6 +23,9 @@ namespace DotsNav.Navmesh
 
             Terrain = 1 << 4,
             Ignore = 1 << 5,
+
+            // MajorConstrained = Obstacle,
+            // MinorConstrained = Terrain | Obstacle | Clearance,
         }
 
         public static readonly Dictionary<Type, UnityEngine.Color> EdgeColors = new Dictionary<Type, UnityEngine.Color> {
@@ -41,21 +44,59 @@ namespace DotsNav.Navmesh
         float _clearanceLeft;
         float _clearanceRight;
 
-        internal Edge(QuadEdge* quadEdge, int indexInQuadEdge) : this()
+        /// <summary>
+        /// Returns the origin vertex.
+        /// </summary>
+        public Vertex* Org { get; internal set; }
+
+        /// <summary>
+        /// Returns cost of traversing this edge's left face, i.e. this value will be the same for this edge, LNext and LPrev.
+        /// </summary>
+        public byte MaterialTypeIndex { get; internal set; }
+
+        /// <summary>
+        /// Returns a stricly increasing value unique to this edge's left face, i.e. this value will be the same for this edge,
+        /// LNext and LPrev, with the last triangle created having a higher value than any previously created triangle.
+        /// </summary>
+        public int TriangleId { get; internal set; }
+
+        /// <summary>
+        /// Returns the full cost of traversing this edge's left face, i.e. this value will be the same for this edge, LNext and LPrev.
+        /// </summary>
+        public float TriangleCost { get; internal set; }
+
+
+        internal Edge(QuadEdge* quadEdge, int indexInQuadEdge)
         {
+            Next = null;
+            Org = null;
             QuadEdge = quadEdge;
             _indexInQuadEdge = indexInQuadEdge;
             _clearanceLeft = -1;
             _clearanceRight = -1;
+            TriangleId = -1;
+            TriangleCost = 1f;
+            MaterialTypeIndex = 0;
         }
 
-        public Type EdgeType => QuadEdge->EdgeType;
+        /// <summary>
+        /// Returns the destination vertex.
+        /// </summary>
+        public Vertex* Dest => Sym->Org;
 
-        public bool IsMajor => EdgeType.HasAllFlagsB(Type.Major);
-        public bool IsObstacle => EdgeType.HasAllFlagsB(Type.Obstacle);
-        public bool IsClearance => EdgeType.HasAllFlagsB(Type.Clearance);
-        public bool IsTerrain => EdgeType.HasAllFlagsB(Type.Terrain);
-        public bool IsIgnore => EdgeType.HasAllFlagsB(Type.Ignore);
+        /// <summary>
+        /// Returns a value unique to this edge's quadedge, i.e. this value will be the same for edge(x,y) and edge(y,x).
+        /// This value is not stable and can change when updating the navmesh.
+        /// </summary>
+        public int QuadEdgeId => QuadEdge->Id;
+
+        public readonly Type EdgeType => QuadEdge->EdgeType;
+        public readonly Type MainEdgeType { 
+            get {
+                UnityEngine.Debug.Assert((QuadEdge->EdgeType & ~(Type.Major | Type.Minor)).HasNoFlagsB(Type.Major | Type.Minor));
+                return QuadEdge->EdgeType & ~(Type.Major | Type.Minor);
+            }
+        }
 
         internal void SetEdgeType(Type fixedEdgeType) {
             QuadEdge->EdgeType = fixedEdgeType;
@@ -83,9 +124,9 @@ namespace DotsNav.Navmesh
 
         public static unsafe void VerifyEdge(Edge* e) {
             if (IsEdgeTypeMajor(e->EdgeType)) {
-                UnityEngine.Debug.Assert(MathLib.LogicalIff(e->EdgeType.HasAnyFlagsB(Type.Obstacle), e->Constrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->Constrained}");
+                UnityEngine.Debug.Assert(MathLib.LogicalIff(e->EdgeType.HasAnyFlagsB(Type.Obstacle), e->IsConstrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
             } else {
-                UnityEngine.Debug.Assert(MathLib.LogicalIff(e->EdgeType.HasAnyFlagsB(Type.Terrain), e->Constrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->Constrained}");
+                UnityEngine.Debug.Assert(MathLib.LogicalIff(e->EdgeType.HasAnyFlagsB(Type.Terrain), e->IsConstrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
 
                 if (e->EdgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance)) {
                     UnityEngine.Debug.Assert(e->MajorEdge != null, "Minor Obstaces and Clearances must have Major edges");
@@ -101,32 +142,17 @@ namespace DotsNav.Navmesh
             VerifyEdge(e);
         }
 
-        /// <summary>
-        /// Returns the origin vertex.
-        /// </summary>
-        public Vertex* Org { get; internal set; }
+        public float CalcSlopeCost() {
+            Triangle tri = Get3DTriangle();
+            float3 normal = tri.Normal;
+            CommonLib.DebugVector(tri.Centroid(), tri.Normal, UnityEngine.Color.cyan);
+            return normal.y > 0f ? 1f / normal.y : float.MaxValue;
+        }
 
-        /// <summary>
-        /// Returns the destination vertex.
-        /// </summary>
-        public Vertex* Dest => Sym->Org;
+        public Triangle Get3DTriangle() => new Triangle(LNext->Org->Point3D, Org->Point3D, LPrev->Org->Point3D);
 
-        /// <summary>
-        /// Returns a value unique to this edge's quadedge, i.e. this value will be the same for edge(x,y) and edge(y,x).
-        /// This value is not stable and can change when updating the navmesh.
-        /// </summary>
-        public int QuadEdgeId => QuadEdge->Id;
-
-        /// <summary>
-        /// Returns a stricly increasing value unique to this edge's left face, i.e. this value will be the same for this edge,
-        /// LNext and LPrev, with the last triangle created having a higher value than any previously created triangle.
-        /// </summary>
-        public int TriangleId { get; internal set; }
-
-        /// <summary>
-        /// Returns cost of traversing this edge's left face, i.e. this value will be the same for this edge, LNext and LPrev.
-        /// </summary>
-        public float TriangleCost { get; internal set; }
+        public float2 SegVector => Dest->Point - Org->Point;
+        public float3 SegVector3D => Dest->Point3D - Org->Point3D;
 
         /// <summary>
         /// Returns the amount of clearance when traversing this edge while moving left.
@@ -156,8 +182,8 @@ namespace DotsNav.Navmesh
             internal set => _clearanceRight = value;
         }
         
-        public float DebugNonCalcClearanceLeft => _clearanceLeft;
-        public float DebugNonCalcClearanceRight => _clearanceRight;
+        public float DebugRawClearanceLeft => _clearanceLeft;
+        public float DebugRawClearanceRight => _clearanceRight;
 
         /// <summary>
         /// True for one of a quadedge's two directed edges, i.e. true for either edge(x,y) or edge(y,x).
@@ -177,22 +203,21 @@ namespace DotsNav.Navmesh
             set => QuadEdge->Mark = value;
         }
 
-        public float2 SegVector => Dest->Point - Org->Point;
-
         internal Edge* MajorEdge
         {
             get => QuadEdge->MajorEdge;
             set => QuadEdge->MajorEdge = value;
         }
         public bool HasMajorEdge => MajorEdge != null;
+        public bool ContainsMajorEdge(Edge* edgeMajor) => MajorEdge == edgeMajor || MajorEdge == edgeMajor->Sym;
         public Edge* GetMajorEdge() { // Assumes MajorEdge exists. Returns MajorEdge facing same direction as this edge
             UnityEngine.Debug.Assert(MathLib.IsParallel(SegVector.XOY(), MajorEdge->SegVector.XOY(), 0.001f));
-            UnityEngine.Debug.Assert(MathLib.AreVectorsSameDir(SegVector, (IsPrimary ? MajorEdge : MajorEdge->Sym)->SegVector));
+            UnityEngine.Debug.Assert(MathLib.IsSameDir(SegVector, (IsPrimary ? MajorEdge : MajorEdge->Sym)->SegVector));
             return IsPrimary ? MajorEdge : MajorEdge->Sym;
         }
 
         public ReadOnly<Entity> Constraints => new(QuadEdge->Crep.Ptr, QuadEdge->Crep.Length);
-        public bool Constrained => QuadEdge->Crep.Length > 0;
+        public bool IsConstrained => QuadEdge->Crep.Length > 0;
         
         // public bool IsBarrier => QuadEdge->Crep.Length > 0;
         public bool IsConstrainedBy(Entity id) => QuadEdge->Crep.Contains(id);
@@ -260,5 +285,9 @@ namespace DotsNav.Navmesh
 
         public override string ToString()
             => $"Edge: {Org->ToString()} => {Dest->ToString()}";
+
+        public bool IsValid() {
+            return true;
+        }
     }
 }

@@ -1,4 +1,84 @@
 using System;
+using System.Diagnostics;
+
+
+namespace Unity.Collections.LowLevel.Unsafe {
+public struct UnsafeCircularQueue<T> : IDisposable
+    where T : unmanaged
+{
+    UnsafeList<T> array;
+    int head;
+    int tail;
+    public int Length { get; private set; }
+    public int Capacity => array.Length;
+
+    public readonly bool IsEmpty => Length == 0;
+
+    public UnsafeCircularQueue(int initialCapacity, Allocator allocator) { 
+        array = new UnsafeList<T>(initialCapacity, allocator);
+        for (int i = 0; i < initialCapacity; i++) { array.Add(default); }
+        Length = 0;
+        head = 0;
+        tail = 0;
+    }
+
+    public void Enqueue(T element) {
+        if (Length == Capacity) {
+            ResizeArray();
+        }
+        array[tail] = element;
+        tail = (tail + 1) % Capacity;
+        Length++;
+    }
+
+    public T Dequeue() {
+        if (IsEmpty) {
+            Debug.Assert(false, "Circular queue is empty");
+            return default;
+        }
+        T removedElement = array[head];
+        head = (head + 1) % Capacity;
+        Length--;
+        return removedElement;
+    }
+
+    private void ResizeArray() {
+        int newCapacity = Capacity * 2;
+        UnsafeList<T> newArray = new UnsafeList<T>(newCapacity, array.Allocator.ToAllocator);
+        for (int i = 0; i < newCapacity; i++) { newArray.Add(default); }
+        for (int i = 0; i < Length; i++) {
+            newArray[i] = array[(head + i) % Capacity];
+        }
+        array.Dispose(); // Dispose first so hopefully new array can take place of old array
+        array = newArray;
+        head = 0;
+        tail = Length;
+    }
+
+    public T Peek() {
+        if (IsEmpty) {
+            Debug.Assert(false, "Circular queue is empty");
+            return default;
+        }
+        return array[head];
+    }
+
+    public void Clear() {
+        head = tail = 0;
+    }
+
+    public void Dispose() => array.Dispose();
+}
+}
+
+
+
+
+
+
+
+
+
 
 
 namespace Unity.Collections.LowLevel.Unsafe {

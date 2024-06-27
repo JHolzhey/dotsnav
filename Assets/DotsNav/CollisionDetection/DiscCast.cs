@@ -73,7 +73,7 @@ namespace DotsNav.CollisionDetection
                 if (IntersectSegDisc(edge->Org->Point, edge->Dest->Point, o, r))
                 {
                     open.Add((IntPtr) edge->Sym);
-                    if (edge->Constrained)
+                    if (edge->IsConstrained)
                         discCast.RegisterCollision(edge);
                 }
 

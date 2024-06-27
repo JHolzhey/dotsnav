@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Unity.Collections;
@@ -12,7 +11,6 @@ using UnityEngine;
 using Debug = UnityEngine.Debug;
 using static System.Runtime.CompilerServices.MethodImplOptions;
 using MI = System.Runtime.CompilerServices.MethodImplAttribute;
-using Unity.Entities.UniversalDelegates;
 
 
 
@@ -35,9 +33,29 @@ using Unity.Entities.UniversalDelegates;
 //     }
 // }
 
+public struct Pair<T, U> where T : unmanaged  where U : unmanaged {
+    public Pair(T first, U second) {
+        this.first = first;
+        this.second = second;
+    }
+    public T first;
+    public U second;
+};
+
 
 namespace Unity.Mathematics
 {
+public interface IGeometry {
+    float3 Center { get; }
+    float4x4 CalcLocalMatrix();
+    bool IsValid();
+}
+
+public interface IShape : IGeometry {
+    void ToAABB(out float3 minPosition, out float3 maxPosition);
+    // public Polygon ToXZBoundsPolygon();
+    // public Rect ToXZBoundsRect();
+}
 public struct AsByte {
     byte compressedAsByte;
     
@@ -197,8 +215,8 @@ public static class MathLib
     public static bool IsVectorYZPlane(float3 vector, float epsilon = 0.001f) => math.abs(vector.x) < epsilon;
     public static bool IsVectorXYPlane(float3 vector, float epsilon = 0.001f) => math.abs(vector.z) < epsilon;
     public static bool IsVectorTowardsNormal(float3 vector, float3 normal) => math.dot(vector, normal) < 0f;
-    public static bool AreVectorSameDir(float3 vector0, float3 vector1) => math.dot(vector0, vector1) > 0f;
-    public static bool AreVectorsSameDir(float2 vector0, float2 vector1) => math.dot(vector0, vector1) > 0f;
+    public static bool IsSameDir(float3 vector0, float3 vector1) => math.dot(vector0, vector1) > 0f;
+    public static bool IsSameDir(float2 vector0, float2 vector1) => math.dot(vector0, vector1) > 0f;
     public static bool IsNormalized(float3 vector, float epsilon = 0.001f) => IsEpsEqual(math.length(vector), 1f, epsilon);
 
     public static bool IsEpsEqualApprox(float2 vector1, float2 vector2, float epsilon = float.Epsilon) => math.all(math.abs(vector2 - vector1) < epsilon);
@@ -216,6 +234,8 @@ public static class MathLib
 
     public static float3 Midpoint(float3 point1, float3 point2) => Average(point1, point2); // Same as Average but for points
     public static float3 Midpoint(float3 point1, float3 point2, float3 point3) => Average(point1, point2, point3);
+    public static float3 TriangleCentroid(float3 point1, float3 point2, float3 point3) => Average(point1, point2, point3);
+
     public static float3 Average(float3 vector0, float3 vector1) => (vector0 + vector1) * 0.5f; // Same as MidPoint but for vectors
     public static float3 Average(float3 vector0, float3 vector1, float3 vector2) => (vector0 + vector1 + vector2) * 1f/3f;
     public static float3 AverageNormalize(float3 vector0, float3 vector1) => math.normalize(Average(vector0, vector1)); // Same as MidPoint but for vector average
@@ -236,19 +256,19 @@ public static class MathLib
         return IsEpsEqual(math.abs(math.dot(vectorUnit0, vectorUnit1)), 0f, epsilon);
     }
 
-    public unsafe static T* NullCoalesce<T>(T* a, T* b) where T : unmanaged => a != null ? a : b; 
+    public unsafe static T* NullCoalesce<T>(T* a, T* b) where T : unmanaged => a != null ? a : b;
 
-    public static int ReverseIndex(int index, int listSize) => listSize - 1 - index; 
-    public static int NextIndex(int index, int listSize) => (index + 1) % listSize; 
+    public static int ReverseIndex(int index, int listSize) => listSize - 1 - index;
+    public static int NextIndex(int index, int listSize) => (index + 1) % listSize;
     public static int PrevIndex(int index, int listSize) => ClampIndexLoop(index - 1, listSize); // Not actually mod operator, so need to ClampIndexLoop
     // Clamp list indices - Will even work if index is larger/smaller than listSize, so can loop multiple times
-    public static int ClampIndexLoop(int index, int listSize) => smod(index, listSize); 
+    public static int ClampIndexLoop(int index, int listSize) => smod(index, listSize);
 
     // TODO: Reword naming?
-    public static int ComparerIsFirstMax(float value0, float value1) => value0.CompareTo(value1); 
-    public static int ComparerIsFirstMin(float value0, float value1) => -value0.CompareTo(value1); 
-    public static int ComparerIsFirstMax(int value0, int value1) => value0.CompareTo(value1); 
-    public static int ComparerIsFirstMin(int value0, int value1) => -value0.CompareTo(value1); 
+    public static int ComparerIsFirstMax(float value0, float value1) => value0.CompareTo(value1);
+    public static int ComparerIsFirstMin(float value0, float value1) => -value0.CompareTo(value1);
+    public static int ComparerIsFirstMax(int value0, int value1) => value0.CompareTo(value1);
+    public static int ComparerIsFirstMin(int value0, int value1) => -value0.CompareTo(value1);
 
     public static float3 Reflect(float3 vector, float3 normal, float restitution = 0) { // restitution: 0 is most bouncy, 1 is least bouncy
         return vector - (2.0f - restitution) * math.project(vector, normal);
@@ -589,7 +609,7 @@ public static class MathLib
     }
 
     // TODO: LocalXZ?
-    public static bool IsPolygonSelfIntersecting(in NativeArray<float3> vertexPoints, float4x4 invLocalMatrix) { // Any wise
+    public static bool IsPolygonSelfIntersecting(in NativeArray<float3> vertexPoints, float4x4 invLocalMatrix) { //, float inflation? = 0f) { // Any wise
         NativeArray<float2> localVertexPoints = new NativeArray<float2>(vertexPoints.Length, Allocator.Temp);
         for (int i = 0; i < vertexPoints.Length; i++) {
             localVertexPoints[i] = PointWorldToLocal(vertexPoints[i], invLocalMatrix).xz;
@@ -641,6 +661,20 @@ public static class MathLib
     //     }
     //     return vertexPointsCopy;
     // }
+
+    public static void InsetTriangle(float3 p0, float3 p1, float3 p2, float insetAmount, out float3 newP0, out float3 newP1, out float3 newP2) {
+        float3 e01 = math.normalize(p1 - p0);
+        float3 e12 = math.normalize(p2 - p1);
+        float3 e20 = math.normalize(p0 - p2);
+
+        float3 bisect0 = CalcBisectionUnitTails(e01, -e20, math.up());
+        float3 bisect1 = CalcBisectionUnitTails(e12, -e01, math.up());
+        float3 bisect2 = CalcBisectionUnitTails(e20, -e12, math.up());
+
+        newP0 = p0 + bisect0 * insetAmount;
+        newP1 = p1 + bisect1 * insetAmount;
+        newP2 = p2 + bisect2 * insetAmount;
+    }
 
     // TODO: Pretty sure this is not working:
     public static float3 CalcPolygonIntegratedCentroidNotIdeal(in NativeArray<float3> vertexPoints) { // Signed polygon area
@@ -728,7 +762,7 @@ public static class MathLib
 
     public static class PolygonUtility {
         // https://stackoverflow.com/a/1165943
-        public static float SignedArea(NativeArray<float2> points) // TODO: Horrible, rewrite maybe using math.det
+        public static float SignedArea(NativeArray<float2> points)
         {
             if (points.Length <= 1) {
                 return 0;
@@ -1247,6 +1281,11 @@ public static class MathLib
         Debug.Assert(pointMaxXYZIndex != -1, "TODO, what could cause this?");
         return pointMaxXYZ;
     }
+
+    public static bool IsPolygonXZCCW(in NativeArray<float3> vertexPoints) {
+        return CalcPolygonNormalCCW(vertexPoints).y > 0;
+    }
+
     // Assumes polygon is planar
     public static float3 CalcPolygonNormalCCW(in NativeArray<float3> vertexPoints) => CalcPolygonNormalCCW(vertexPoints, out int _);
     public static float3 CalcPolygonNormalCCW(in NativeArray<float3> vertexPoints, out int pointMaxXYZIndex) { // Normal points towards screen if CCW relative to screen
@@ -1427,530 +1466,531 @@ public static class MathLib
             actualBtwSpacing = default;
         }
     }
-
-
-    public static bool Is3DPolygonsIntersecting() {
-        
-        return false;
-    }
-
-    // public static bool IsPolygonsIntersectingXZ(in Polygon polygon0, in Polygon polygon1) {
-    //     Debug.Assert(polygon0.IsValid() || polygon1.IsValid(), "Invalid polygon");
-    //     if (polygon0.NumVertices > polygon1.NumVertices) { // Minor optimization that potentially reduces for loop iterations
-    //         return SeparatingAxisTheorem(polygon0, polygon1) && SeparatingAxisTheorem(polygon1, polygon0);
-    //     } else {
-    //         return SeparatingAxisTheorem(polygon1, polygon0) && SeparatingAxisTheorem(polygon0, polygon1);
-    //     }
-    // }
-    // static bool SeparatingAxisTheorem(in Polygon polygon0, in Polygon polygon1) { // TODO: Add XZ suffix?
-    //     for (int i = 0; i < polygon0.NumVertices; i++) {
-    //         float3 edgeRight = -polygon0.GetEdgeRight(i);
-    //         float3 edgeVert = polygon0.GetVertexPoint(i);
-
-    //         CommonLib.DebugVector(polygon0.GetEdgeMidpoint(i), edgeRight*0.2f, Color.blue, 0.015f, 0.1f);
-
-    //         bool isOverlapping = false;
-    //         for (int j = 0; j < polygon1.NumVertices; j++) { // TODO: Use a MathLib PointToPlane function like below
-    //             float projectedDistance = math.dot(edgeRight, polygon1.GetVertexPoint(j) - edgeVert);
-    //             // float projectedDistance = PointToPlaneDistanceSigned(polygon1.GetVertexPoint(j), edgeRight, edgeVert);
-    //             if (projectedDistance < 0) {
-    //                 isOverlapping = true; // Do not add break statement
-    //             }
-    //         }
-    //         if (!isOverlapping) {
-    //             return false;
-    //         }
-    //     }
-    //     return true;
-    // }
-
-    // // SutherlandHodgman, burstified from Habrador
-    // public static NativeList<float3> ClipPolygon(in Polygon polygon, Polygon polygonClip, bool isProjClipToWorldXZ) {
-    //     Debug.Assert(polygonClip.IsConvex(out bool _, 0f), "polygonClip must be convex");
-    //     Debug.Assert(!isProjClipToWorldXZ || !IsVectorXZPlane(polygonClip.Plane.normal), "If isProjClipToXZ == true, then polygonClip cannot be vertical (i.e. normal cannot be XZ plane)");
-        
-    //     // if (isProjClipToXZ) { polygonClip.ProjToXZPlane(); CommonLib.DebugPolygon(polygonClip, Color.black, 0f, 0.025f, false, 0.1f); }
-
-    //     NativeList<float3> clipVertexPoints = new NativeList<float3>(polygon.NumVertices, Allocator.Temp);
-    //     clipVertexPoints.AddRange(polygon.VertexPointsRO);
-
-    //     NativeList<float3> clipVertexPointsTemp = new NativeList<float3>(polygon.NumVertices, Allocator.Temp);
-
-    //     for (int i = 0; i < polygonClip.NumVertices; i++) {
-    //         // TODO: ClipNormal should be perpendicular to up()
-    //         float3 edgeVector = polygonClip.GetEdgeVector(i);
-    //         float3 planeNormal = polygonClip.Plane.normal;
-    //         if (isProjClipToWorldXZ) { edgeVector.y = 0; planeNormal = math.up(); }
-
-    //         float3 edgeRight_ClipNormal = -polygonClip.GetEdgeRight(i); // Clipping plane normal, points inwards from polygon perspective
-
-    //         float3 edgeVert_ClipPos = polygonClip.GetVertexPoint(i); // Clipping plane pos, arbitrarily on the clipping plane
-    //         float edgeVert_ClipPlaneDist = CalcPlaneDistance(edgeRight_ClipNormal, edgeVert_ClipPos); // Clipping plane dist
-
-    //         CommonLib.DebugVector(polygonClip.GetEdgeMidpoint(i), edgeRight_ClipNormal*0.2f, Color.blue, 0.015f, 0.1f);
-
-    //         // bool isOverlapping = false;
-    //         for (int j = 0; j < clipVertexPoints.Length; j++) {
-
-    //             float3 vert0Point = clipVertexPoints[j];
-    //             float3 vert1Point = clipVertexPoints[NextIndex(j, clipVertexPoints.Length)];
-
-    //             float point0ToClipDist = PointToPlaneDistanceSigned(vert0Point, edgeRight_ClipNormal, edgeVert_ClipPos); // TODO: Make negative or flip Leq/Geq below
-    //             float point1ToClipDist = PointToPlaneDistanceSigned(vert1Point, edgeRight_ClipNormal, edgeVert_ClipPos);
-
-    //             //TODO: What will happen if they are exactly 0? Should maybe use a tolerance of 0.001
-
-    //             //Case 1. Both are outside (= to the right), do nothing 
-
-    //             float3 rayVector = vert1Point - vert0Point;
-    //             if (point0ToClipDist >= 0f && point1ToClipDist >= 0f) { // Case 2. Both are inside (= to the left), save vert1Point
-    //                 clipVertexPointsTemp.Add(vert1Point);
-    //             } else if (point0ToClipDist < 0f && point1ToClipDist >= 0f) { // Case 3. Outside -> Inside, save intersection point and vert1Point
-    //                 if (!IsRayPlaneIntersecting(vert0Point, math.normalize(rayVector), math.length(rayVector)*5f, edgeRight_ClipNormal, edgeVert_ClipPlaneDist, out float3 nearestPointToPlane)) {
-    //                     Debug.Assert(false, "Glitch");
-    //                 }
-    //                 clipVertexPointsTemp.Add(nearestPointToPlane);
-
-    //                 clipVertexPointsTemp.Add(vert1Point);
-
-    //             } else if (point0ToClipDist >= 0f && point1ToClipDist < 0f) { // Case 4. Inside -> Outside, save intersection point
-    //                 if (!IsRayPlaneIntersecting(vert0Point, math.normalize(rayVector), math.length(rayVector)*5f, edgeRight_ClipNormal, edgeVert_ClipPlaneDist, out float3 nearestPointToPlane)) {
-    //                     Debug.Assert(false, "Glitch");
-    //                 }
-    //                 clipVertexPointsTemp.Add(nearestPointToPlane);
-    //             }
-
-    //             // if (isAddRayClipPlaneIntersection) {
-    //             //     float3 rayVector = vert1Point - vert0Point;
-    //             //     if (IsRayPlaneIntersecting(vert0Point, math.normalize(rayVector), math.length(rayVector), edgeRight_ClipNormal, edgeVert_ClipPlaneDist, out float3 nearestPointToPlane)) {
-    //             //         clipVertexPointsTemp.Add(nearestPointToPlane);
-    //             //     } else {
-    //             //         Debug.Assert(false, "Glitch");
-    //             //     }
-    //             // }
-    //         }
-
-    //         //Add the new vertices to the list of vertices
-    //         clipVertexPoints.Clear();
-
-    //         clipVertexPoints.AddRange(clipVertexPointsTemp.AsArray());
-
-    //         clipVertexPointsTemp.Clear();
-    //     }
-    //     return clipVertexPoints;
-    // }
-
-    // TODO: Is Grid an incorrect word? Grid should mean both vertical and horizontal gridlines. This function only does vertical (Same TODO as below)
-    public static NativeList<float2> SegGridIntersections(float2 rayStart, float2 rayEnd, float2 bottomLeftCorner, float cellSize, bool is_OnlyX = false) {
-        NativeList<float2> intersectionPoints = new NativeList<float2>((int)(math.length(rayEnd - rayStart)/cellSize), Allocator.Temp);
-        // int numXGridLinesBtw = math.abs(endCoords.x - startCoords.x)+1;
-        // int numYGridLinesBtw = (math.abs(endCoords.y - startCoords.y)+1) * (is_OnlyX ? 0 : 1);
-        // intersectionPoints.SetCapacity(numXGridLinesBtw + numYGridLinesBtw);
-        SegGridIntersections(rayStart, rayEnd, ref intersectionPoints, bottomLeftCorner, cellSize, is_OnlyX);
-        return intersectionPoints;
-    }
-    public static NativeList<float2> SegGridIntersections(float2 segStart, float2 segEnd, ref NativeList<float2> intersectionPoints, float2 bottomLeftCorner, float cellSize, bool is_OnlyX = false) {
-        Debug.Assert(!IsEpsEqual(segStart, segEnd, 0.001f), "start and end cannot be the same point");
-        Debug.Assert(math.all(bottomLeftCorner <= segStart) && math.all(bottomLeftCorner <= segEnd), $"bottomLeftCorner must be LEQ start and end (X and Y), bottomLeftCorner: {bottomLeftCorner},  segStart: {segStart},  segEnd: {segEnd}");
-
-        float2 segVector = segEnd - segStart;
-        float2 startRelativeToBottomLeftPos = (segStart - bottomLeftCorner) / cellSize; // Needed
-
-        int2 startCoords = WorldToCellCoords(segStart, bottomLeftCorner, cellSize);
-        int2 endCoords = WorldToCellCoords(segEnd, bottomLeftCorner, cellSize);
-
-        int signY = (segVector.y > 0) ? 1 : -1;
-        int signX = (segVector.x > 0) ? 1 : -1;
-        float slopeM = segVector.y / segVector.x;
-        if (segVector.x == 0f) { slopeM = 100000f; }
-        float interceptB = (-slopeM * startRelativeToBottomLeftPos.x) + startRelativeToBottomLeftPos.y;
-
-        int numXGridLinesBtw = math.abs(endCoords.x - startCoords.x);
-        int boolX = (signX > 0) ? 1 : 0; // For offsetting x axis values when seg is negative x
-        int boolY = (signY > 0) ? 1 : 0;
-
-        int currentX = startCoords.x + (1 - boolX);
-        int currentY = startCoords.y;
-        for (int i = 0; i < numXGridLinesBtw; i++) {
-            int X = startCoords.x + (i * signX) + boolX;
-            float YExact = slopeM * X + interceptB;
-            int Y = (int)YExact; // y = m * x + b (where b is initial z position)
-
-            
-            if (!is_OnlyX) {
-                for (int Y0 = currentY; Y0 != Y; Y0 += signY) {
-                    float XExact = ((Y0 + boolY) - interceptB) / slopeM; // x = (y - b)/m
-                    intersectionPoints.Add(bottomLeftCorner + (cellSize * new float2(XExact, (Y0 + boolY))));
-
-                    if (math.abs(Y0 - Y) > 100) { Debug.Assert(false, "Too many, infinite loop, may be outside bottomLeftCorner"); break; }
-                }
-            }
-            intersectionPoints.Add(bottomLeftCorner + (cellSize * new float2((currentX + signX), YExact)));
-            currentX = X;  currentY = Y;
-        }
-
-        if (!is_OnlyX) {
-            for (int Y0 = currentY; Y0 != endCoords.y; Y0 += signY) {
-                float XExact = ((Y0 + boolY) - interceptB) / slopeM; // x = (y - b)/m
-                intersectionPoints.Add(bottomLeftCorner + (cellSize * new float2(XExact, (Y0 + boolY))));
-
-                if (math.abs(Y0 - endCoords.y) > 100) { Debug.Assert(false, "Too many, infinite loop, may be outside bottomLeftCorner"); break; }
-            }
-        }
-
-        return intersectionPoints;
-    }
-
-    // // TODO: is_OnlyX seems like it should not be a parameter and always given to SegGridIntersections()'s parameter as true
-    // // TODO: Is Grid an incorrect word? Grid should mean both vertical and horizontal gridlines. This function only does vertical (Same TODO as above)
-    // // Takes only the xz plane of polygon
-    // public static void PolygonGridIntersectionsTopBottom(in Polygon polygon, float3 bottomLeftCorner, float cellSize,
-    //     out NativeList<float2> bottomEdgeIntersections, out NativeList<float2> topEdgeIntersections, bool is_OnlyX = false) // Add check if ray is out of bounds
-    // {
-    //     Debug.Assert(polygon.IsValid(), "Invalid polygon");
-    //     // Debug.Log("polygon.IsGroundCCW: " + polygon.IsGroundCCW);
-    //     Debug.Assert(polygon.NumVertices > 0, "Empty polygon");
-
-    //     bottomEdgeIntersections = new NativeList<float2>(1, Allocator.Temp); // All cell Intersections of only rasterized bottom edge of polygon, and only one cell coord per X
-    //     topEdgeIntersections = new NativeList<float2>(1, Allocator.Temp);    // Same but for top edge
-    //     NativeList<float2> currentEdgeIntersections; // Will reference either bottomEdge or topEdge Intersections
-
-    //     // Find the first instance around the polygon that edges switch from top to bottom (end) or vice versa:
-    //     int startingEdgeIndex = FindFirstEdgeSwitchingEnds(polygon, out bool isCurrentEdgeTop);
-    //     currentEdgeIntersections = isCurrentEdgeTop ? topEdgeIntersections : bottomEdgeIntersections;
-    //     Debug.Assert(startingEdgeIndex != -1, "Broken polygon");
-
-    //     // int colorIndex = 0; // Debug
-    //     for (int i0 = startingEdgeIndex; i0 < polygon.NumVertices + startingEdgeIndex; i0++) { // Now goes around polygon edges and adds to current end Intersections
-    //         int index = i0;
-    //         if (i0 >= polygon.NumVertices) { // TODO: Replace with mod
-    //             index = i0 - polygon.NumVertices;
-    //         }
-    //         int i = i0 % polygon.NumVertices; // Pretty sure this is the answer to the above TODO
-    //         Debug.Assert(i == index, "Indices not equal");
-
-    //         float3 edgeVector = polygon.GetEdgeVectorWise(index, polygon.IsGroundCCW);
-    //         // CommonLib.CreatePrimitive(PrimitiveType.Cube, edge.CalcMidpoint(), new float3(0.05f), CommonLib.CycleColors[colorIndex++]);
-
-    //         bool isTopEdge = edgeVector.x > 0;
-    //         if (isTopEdge ^ isCurrentEdgeTop) { // If detect a switch of ends based on edge direction, switch current Intersections and don't remove last element
-    //             // Debug.Log("Switching ends");
-    //             isCurrentEdgeTop = isTopEdge; // Update our bool variable that tells us which end we are currently on
-    //             currentEdgeIntersections = isTopEdge ? topEdgeIntersections : bottomEdgeIntersections; // Switch to correct end Intersections list (top or bottom)
-    //         }
-    //         float3 edgeStart = polygon.GetVertexPointWise(index, polygon.IsGroundCCW);  float3 edgeEnd = polygon.GetNextVertexPointWise(index, polygon.IsGroundCCW);
-    //         SegGridIntersections(edgeStart.xz, edgeEnd.xz, ref currentEdgeIntersections, bottomLeftCorner.xz, cellSize, is_OnlyX);
-    //     }
-    // }
-
-    // public static NativeList<int2> RasterPolygon(in Polygon polygon, float3 bottomLeftCorner, float cellSize, out IntRect XYBounds, bool isOnlyCellCenterInside = false, int inset = 0) // Add check if ray is out of bounds
-    // {
-    //     Debug.Assert(polygon.IsValid(), "Invalid polygon");
-
-    //     RasterPolygonTopBottom(polygon, bottomLeftCorner, cellSize, out NativeList<int2> bottomEdgeCellCoords, out NativeList<int2> topEdgeCellCoords);
-
-    //     NativeList<int2> rasterCellCoords = new NativeList<int2>(1, Allocator.Temp); // All cell coords of fully rasterized polygon (if a cell is barely clipped, it will still be included)
-    //     // bottomEdgeCellCoords.(default, 0);
-    //     Debug.Assert(bottomEdgeCellCoords.Length == topEdgeCellCoords.Length);
-    //     int numXCoords = bottomEdgeCellCoords.Length;
-    //     XYBounds = new IntRect(bottomEdgeCellCoords[numXCoords-1].x, int.MinValue, bottomEdgeCellCoords[0].x, int.MaxValue);
-    //     Debug.Assert(XYBounds.xMin <= XYBounds.xMax, "minX must be less than or equal to maxX");
-
-    //     for (int i = inset; i < numXCoords - inset; i++) { // Now iterate from bottomY to topY for each X and add new int2(X, Y) to final raster coords
-    //         int X = bottomEdgeCellCoords[i].x;
-    //         int bottomY = bottomEdgeCellCoords[i].y; // (numXCoords - 1) - i
-    //         int topY = topEdgeCellCoords[ReverseIndex(i, numXCoords)].y; // topEdgeCellCoords are in reverse order of bottomEdgeCellCoords
-    //         XYBounds.yMin = math.min(bottomY, XYBounds.yMin);
-    //         XYBounds.yMax = math.max(topY, XYBounds.yMax);
-
-    //         Debug.Assert(bottomY <= topY, "topY must be greater than or equal to bottomY");
-    //         for (int Y = bottomY + inset; Y <= topY - inset; Y++) {
-    //             // Debug.Log("Is 1D: " + Index2DTo1D(new int2(X, Y)));
-    //             if (isOnlyCellCenterInside && !polygon.IsPointInConvex(CellCoordsToWorld(new int2(X, Y), bottomLeftCorner, cellSize))) { continue; }
-    //             rasterCellCoords.Add(new int2(X, Y));
-    //         }
-    //     }
-    //     return rasterCellCoords;
-    // }
-    // static int FindFirstEdgeSwitchingEnds(in Polygon polygon, out bool isStartingEdgeTop) {
-    //     Debug.Assert(polygon.IsValid(), "Invalid polygon");
-    //     bool isCurrentEdgeTop = polygon.GetEdgeVectorWise(0, polygon.IsGroundCCW).x > 0;
-    //     for (int i = 1; i < polygon.NumVertices; i++) { // Finds the first instance around the polygon that edges switch from top to bottom (end) or vice versa
-    //         bool isTopEdge = polygon.GetEdgeVectorWise(i, polygon.IsGroundCCW).x > 0;
-    //         if (isTopEdge ^ isCurrentEdgeTop) {
-    //             isStartingEdgeTop = isTopEdge;
-    //             return i;
-    //         }
-    //     }
-    //     isStartingEdgeTop = false;
-    //     return -1;
-    // }
-    // public static void RasterPolygonTopBottom(in Polygon polygon, float3 bottomLeftCorner, float cellSize,
-    //     out NativeList<int2> bottomEdgeCellCoords, out NativeList<int2> topEdgeCellCoords) // Add check if ray is out of bounds
-    // {
-    //     Debug.Assert(polygon.IsValid(), "Invalid polygon");
-    //     // Debug.Log("polygon.IsGroundCCW: " + polygon.IsGroundCCW);
-    //     Debug.Assert(polygon.NumVertices > 0, "Empty polygon");
-
-    //     bottomEdgeCellCoords = new NativeList<int2>(1, Allocator.Temp); // All cell coords of only rasterized bottom edge of polygon, and only one cell coord per X
-    //     topEdgeCellCoords = new NativeList<int2>(1, Allocator.Temp);    // Same but for top edge
-    //     NativeList<int2> currentEdgeCellCoords; // Will reference either bottomEdge or topEdge CellCoords
-
-    //     // Find the first instance around the polygon that edges switch from top to bottom (end) or vice versa:
-    //     int startingEdgeIndex = FindFirstEdgeSwitchingEnds(polygon, out bool isCurrentEdgeTop);
-    //     currentEdgeCellCoords = isCurrentEdgeTop ? topEdgeCellCoords : bottomEdgeCellCoords;
-    //     currentEdgeCellCoords.Add(new int2(int.MaxValue)); // To make the RemoveAt last index below work for the first edge iteration below (i.e. this will be removed)
-    //     // Debug.Log("startingEdgeIndex: " + startingEdgeIndex);
-    //     // Debug.Log("isTopEdge: " + isTopEdge);
-    //     Debug.Assert(startingEdgeIndex != -1, "Broken polygon");
-
-    //     // int colorIndex = 0; // Debug
-    //     for (int i0 = startingEdgeIndex; i0 < polygon.NumVertices + startingEdgeIndex; i0++) { // Now goes around polygon edges and adds to current end Coords
-    //         int index = i0;
-    //         if (i0 >= polygon.NumVertices) { // TODO: Replace with mod
-    //             index = i0 - polygon.NumVertices;
-    //         }
-    //         int i = i0 % polygon.NumVertices; // Pretty sure this is the answer to the above TODO
-    //         Debug.Assert(i == index, "Indices not equal");
-
-    //         float3 edgeVector = polygon.GetEdgeVectorWise(index, polygon.IsGroundCCW);
-    //         // CommonLib.CreatePrimitive(PrimitiveType.Cube, edge.CalcMidpoint(), new float3(0.05f), CommonLib.CycleColors[colorIndex++]);
-
-    //         int lastElementIndex = currentEdgeCellCoords.Length - 1; int2 lastElement = new int2(int.MaxValue);
-    //         bool isTopEdge = edgeVector.x > 0;
-    //         if (isTopEdge ^ isCurrentEdgeTop) { // If detect a switch of ends based on edge direction, switch current Coords and don't remove last element
-    //             // Debug.Log("Switching ends");
-    //             isCurrentEdgeTop = isTopEdge; // Update our bool variable that tells us which end we are currently on
-    //             currentEdgeCellCoords = isTopEdge ? topEdgeCellCoords : bottomEdgeCellCoords; // Switch to correct end Coords list (top or bottom)
-    //         } else {
-    //             // Debug.Log("Removing last");
-    //             lastElement = currentEdgeCellCoords[lastElementIndex]; // Save this to compare with next iteration's cell coord to see if will cause gap
-    //             currentEdgeCellCoords.RemoveAt(lastElementIndex); // Remove last element so no duplicates because (this?) next iteration will write its coords too
-    //         }
-    //         bool isZPositive = edgeVector.z > 0;
-    //         bool isReverseRay = isTopEdge ^ isZPositive; // Make RasterEdge work properly (enforce top is top raster and vice versa)
-    //             Debug.Assert(isReverseRay == ((!isTopEdge && isZPositive) || (isTopEdge && !isZPositive)), "Is somehow NOT same as XOR");
-    //         // Raster so only one cell coord per X cell (for each end)
-    //         float3 edgeStart = polygon.GetVertexPointWise(index, polygon.IsGroundCCW);  float3 edgeEnd = polygon.GetNextVertexPointWise(index, polygon.IsGroundCCW);
-
-    //             if (IsEpsEqual(edgeStart, edgeEnd, 0.001f)) {
-    //                 Debug.LogError("Start and end cannot be the same");
-    //                 // CommonLib.DebugPolygon(polygon, Color.blue);
-    //             }
-
-    //         RasterEdge(edgeStart.xz, edgeEnd.xz, ref currentEdgeCellCoords, bottomLeftCorner.xz, cellSize, isReverseRay);
-
-    //         // This compares the Y value of the lastElement of the prev edge raster with the first element of this edge raster (same end) and takes the more extreme
-    //         // lastElement is also technically the very first element
-    //         if (lastElement.x != int.MaxValue) { // This means that Coords list was not swapped (or it's starting edge) and last element of previous iteration was removed
-    //             int2 thatReplacedLastElement = currentEdgeCellCoords[lastElementIndex];
-    //             // If top edge, then take the most maximum Y,        but if bottom edge, then take the lowest Y
-    //             if ((isTopEdge && lastElement.y > thatReplacedLastElement.y) || (!isTopEdge && lastElement.y < thatReplacedLastElement.y)) {
-    //                 currentEdgeCellCoords[lastElementIndex] = lastElement;
-    //                 // Debug.Log("isTopEdge: " + isTopEdge + "  ,  Replacing");
-    //                 // CommonLib.CreatePrimitive(PrimitiveType.Cube, CellCoordsToWorld(thatReplacedLastElement) + new float3(0,0.5f,0.1f), new float3(0.3f), Color.black, default, 5f);
-    //                 // CommonLib.CreatePrimitive(PrimitiveType.Cube, CellCoordsToWorld(lastElement) + new float3(0,0.5f,-0.1f), new float3(0.3f), Color.white, default, 5f);
-    //             }
-
-
-    //             /* if (isTopEdge) {
-    //                 if (lastElement.y > thatReplacedLastElement.y) {
-    //                     Debug.Log("isTopEdge: " + isTopEdge + "  ,  Replacing");
-    //                     currentEdgeCellCoords[lastElementIndex] = lastElement;
-    //                     CommonLib.CreatePrimitive(PrimitiveType.Cube, CellCoordsToWorld(thatReplacedLastElement) + new float3(0,0.5f,0.1f), new float3(0.3f), Color.black, default, 5f);
-    //                     CommonLib.CreatePrimitive(PrimitiveType.Cube, CellCoordsToWorld(lastElement) + new float3(0,0.5f,-0.1f), new float3(0.3f), Color.white, default, 5f);
-    //                 }
-    //             } else {
-    //                 if (lastElement.y < thatReplacedLastElement.y) {
-    //                     Debug.Log("isTopEdge: " + isTopEdge + "  ,  Replacing");
-    //                     currentEdgeCellCoords[lastElementIndex] = lastElement;
-    //                     CommonLib.CreatePrimitive(PrimitiveType.Cube, CellCoordsToWorld(thatReplacedLastElement) + new float3(0,0.5f,0.1f), new float3(0.3f), Color.black, default, 5f);
-    //                     CommonLib.CreatePrimitive(PrimitiveType.Cube, CellCoordsToWorld(lastElement) + new float3(0,0.5f,-0.1f), new float3(0.3f), Color.white, default, 5f);
-    //                 }
-    //             } */
-    //         }
-    //     }
-    // }
-
-    public static void RasterEdge(float2 edgeStart, float2 edgeEnd, ref NativeList<int2> rasterCellCoords, float2 bottomLeftCorner, float cellSize, bool isReverse = false)
-    {
-        Debug.Assert(!IsEpsEqual(edgeStart, edgeEnd, 0.001f), $"start and end cannot be the same point; {edgeStart}, {edgeEnd}");
-        Debug.Assert(math.all(bottomLeftCorner <= edgeStart) && math.all(bottomLeftCorner <= edgeEnd), $"bottomLeftCorner must be LEQ start and end (X and Y), bottomLeftCorner: {bottomLeftCorner},  edgeStart: {edgeStart},  edgeEnd: {edgeEnd}");
-        // CommonLib.CreatePrimitive(PrimitiveType.Cube, edgeStart + new float3(0.1f, 0, 0), new float3(0.3f, 0.6f, 0.3f), Color.green, default, 5f);
-        // CommonLib.CreatePrimitive(PrimitiveType.Cube, edgeEnd - new float3(0.1f, 0, 0), new float3(0.3f, 0.6f, 0.3f), Color.red, default, 5f);
-        float2 rayVector = edgeEnd - edgeStart;
-        float2 startRelativeToBottomLeftPos = (edgeStart - bottomLeftCorner) / cellSize;
-
-        int2 startCoords = WorldToCellCoords(edgeStart, bottomLeftCorner, cellSize);
-        int2 endCoords = WorldToCellCoords(edgeEnd, bottomLeftCorner, cellSize);
-
-        int signY = (rayVector.y > 0) ? 1 : -1;
-        int signX = (rayVector.x > 0) ? 1 : -1;
-        float slopeM = rayVector.y / rayVector.x;
-        if (rayVector.x == 0f) { slopeM = 100000f; }
-        float interceptB = (-slopeM * startRelativeToBottomLeftPos.x) + startRelativeToBottomLeftPos.y;
-
-        int numXGridLinesBtw = math.abs(endCoords.x - startCoords.x);
-        int boolX = (signX > 0) ? 1 : 0; // For offsetting x axis values when ray is negative x
-
-        int currentX = startCoords.x + (1 - boolX);  int currentY = startCoords.y;
-        for (int I = 0; I < numXGridLinesBtw; I++) {
-            int X = startCoords.x + (I * signX) + boolX;
-            int Y = (int)(slopeM * X + interceptB); // y = m * x + b (where b is initial z position)
-
-            int YUsing = isReverse ? currentY : Y;
-            
-            rasterCellCoords.Add(new int2(currentX - (1 - boolX), YUsing));
-            currentX = X;  currentY = Y;
-        }
-        int YUsing2 = isReverse ? currentY : endCoords.y;
-        rasterCellCoords.Add(new int2(currentX - (1 - boolX), YUsing2));
-    }
-
-    // public static NativeList<int2> RasterRay(RayInput seg, float2 bottomLeftCorner, float cellSize) { return RasterSeg(seg.start.xz, seg.end.xz, bottomLeftCorner, cellSize); }
-    public static NativeList<int2> RasterSeg(float2 segStart, float2 segEnd, float2 bottomLeftCorner, float cellSize) {
-        NativeList<int2> rasterCellCoords = new NativeList<int2>((int)(math.length(segEnd - segStart)/cellSize), Allocator.Temp); // Resize NativeList is more expensive
-        RasterSeg(segStart, segEnd, ref rasterCellCoords, bottomLeftCorner, cellSize);
-        return rasterCellCoords;
-    }
-
-    public static void RasterSeg(float2 segStart, float2 segEnd, ref NativeList<int2> rasterCellCoords, float2 bottomLeftCorner, float cellSize)
-    {
-        Debug.Assert(!IsEpsEqual(segStart, segEnd, 0.001f), "start and end cannot be the same point");
-        Debug.Assert(math.all(bottomLeftCorner <= segStart) && math.all(bottomLeftCorner <= segEnd), $"bottomLeftCorner must be LEQ start and end (X and Y),  bottomLeftCorner: {bottomLeftCorner},  segStart: {segStart},  segEnd: {segEnd}");
-        float2 segVector = segEnd - segStart;
-        float2 startRelativeToBottomLeftPos = (segStart - bottomLeftCorner) / cellSize;
-
-        int2 startCoords = WorldToCellCoords(segStart, bottomLeftCorner, cellSize);
-        int2 endCoords = WorldToCellCoords(segEnd, bottomLeftCorner, cellSize);
-
-        int signY = (segVector.y > 0) ? 1 : -1;
-        int signX = (segVector.x > 0) ? 1 : -1;
-        float slopeM = segVector.y / segVector.x;
-        if (segVector.x == 0f) { slopeM = 100000f; }
-        float interceptB = (-slopeM * startRelativeToBottomLeftPos.x) + startRelativeToBottomLeftPos.y;
-
-        int numXGridLinesBtw = math.abs(endCoords.x - startCoords.x);
-        int boolX = (signX > 0) ? 1 : 0; // For offsetting x axis values when ray is negative x
-
-        int currentX = startCoords.x + (1 - boolX);  int currentY = startCoords.y;
-        for (int I = 0; I < numXGridLinesBtw; I++) {
-            int X = startCoords.x + (I * signX) + boolX;
-            int Y = (int)(slopeM * X + interceptB); // y = m * x + b (where b is initial z position)
-            
-            for (int Y0 = currentY; Y0 != Y + signY; Y0 += signY)
-                rasterCellCoords.Add(new int2(currentX - (1 - boolX), Y0));
-
-            currentX = X;  currentY = Y;
-        }
-        for (int Y0 = currentY; Y0 != endCoords.y + signY; Y0 += signY)
-            rasterCellCoords.Add(new int2(currentX - (1 - boolX), Y0));
-    }
-
-    // TODO: Call RasterRect(int2 bottomLeftCell, int2 topRightCell)
-    // public static NativeList<int2> RasterRect(float3 bottomLeftPosition, float3 topRightPosition, float2 bottomLeftCorner, float cellSize) {}
-    public static NativeArray<int2> RasterRect(int2 bottomLeftCell, int2 topRightCell) {
-        IntRect cellsRect = new IntRect(bottomLeftCell, topRightCell);
-        NativeArray<int2> rasterCellCoords = new NativeArray<int2>(cellsRect.Area(), Allocator.Temp);
-
-        int num = 0;
-        for (int X = bottomLeftCell.x; X <= topRightCell.x; X++) {
-            for (int Y = bottomLeftCell.y; Y <= topRightCell.y; Y++) {
-                rasterCellCoords[num++] = new int2(X, Y);
-            }
-        }
-        return rasterCellCoords;
-    }
-
-
-    // // https://en.wikipedia.org/wiki/Hungarian_algorithm#Matrix_interpretation
-    // [MI(AggressiveInlining)] private static bool ckmin(ref float a, float b) { if (b < a) { a = b; return true; } else { return false; } }
-
-    // public static NativeArray<int> MinCostAssignment(in Native2DArray<float> costs) { // Hungarian
-    //     int J = costs.LengthX, W = costs.LengthY;
-    //     Debug.Assert(J <= W, "Definitely a correct Assertion");
-    //     // job[w] = job assigned to w-th worker, or -1 if no job assigned
-    //     // note: a W-th worker was added for convenience
-    //     NativeArray<int> job = new (W + 1, Allocator.Temp);
-    //     job.Fill(-1);
-        
-    //     NativeArray<float> ys = new (J, Allocator.Temp); // potentials
-    //     NativeArray<float> yt = new (W + 1, Allocator.Temp); // -yt[W] will equal the sum of all deltas
-    //     NativeList<float> answers = new (J, Allocator.Temp);
-
-    //     NativeArray<float> min_to = new (W + 1, Allocator.Temp); //min_to.Fill(float.MaxValue);
-    //     NativeArray<int> prv = new (W + 1, Allocator.Temp); //prv.Fill(-1); // previous worker on alternating path
-    //     NativeArray<bool> in_Z = new (W + 1, Allocator.Temp); // whether worker is in Z
-
-    //     for (int j_cur = 0; j_cur < J; ++j_cur) {  // assign j_cur-th job
-    //         int w_cur = W;
-    //         job[w_cur] = j_cur;
-            
-    //         min_to.Fill(float.MaxValue); // min reduced cost over edges from Z to worker w
-    //         prv.Fill(-1);
-    //         in_Z.Clear();
-
-    //         while (job[w_cur] != -1) { // runs at most j_cur + 1 times
-    //             in_Z[w_cur] = true;
-    //             int j = job[w_cur];
-    //             float delta = float.MaxValue;
-    //             int w_next = default;
-    //             for (int w = 0; w < W; ++w) {
-    //                 if (!in_Z[w]) {                    // TODO: [j][w] should work too! It doesn't
-    //                     if (ckmin(ref min_to.ElementAt(w), costs[j, w] - ys[j] - yt[w])) {
-    //                         prv[w] = w_cur;
-    //                     }
-    //                     if (ckmin(ref delta, min_to[w])) {
-    //                         w_next = w;
-    //                     }
-    //                 }
-    //             }
-    //             // delta will always be non-negative, except possibly during the first time
-    //             // this loop runs if any entries of C[j_cur] are negative
-    //             for (int w = 0; w <= W; ++w) {
-    //                 if (in_Z[w]) {
-    //                     ys[job[w]] += delta;
-    //                     yt[w] -= delta;
-    //                 } else {
-    //                     min_to[w] -= delta;
-    //                 }
-    //             }
-    //             w_cur = w_next;
-    //         }
-    //         // update assignments along alternating path
-    //         for (int w; w_cur != W; w_cur = w) {
-    //             w = prv[w_cur];
-    //             job[w_cur] = job[w];
-    //         }
-    //         answers.AddNoResize(-yt[W]);
-    //     }
-    //     return job;
-    // }
-
-    // /**
-    // * Sanity check: https://en.wikipedia.org/wiki/Hungarian_algorithm#Example
-    // * First job (5):
-    // *   clean bathroom: Bob -> 5
-    // * First + second jobs (9):
-    // *   clean bathroom: Bob -> 5
-    // *   sweep floors: Alice -> 4
-    // * First + second + third jobs (15):
-    // *   clean bathroom: Alice -> 8
-    // *   sweep floors: Dora -> 4
-    // *   wash windows: Bob -> 3
-    // */
-    // public static void SimpleHungarianTest() {
-    //     Native2DArray<float> costsTest = new Native2DArray<float>(3, 3, Allocator.Temp); // { [0] = 8, 5, 9, 4, 2, 4, 7, 3, 8 };
-    //     costsTest[0, 0] = 8; costsTest[0, 1] = 5; costsTest[0, 2] = 9;
-    //     costsTest[1, 0] = 4; costsTest[1, 1] = 2; costsTest[1, 2] = 4;
-    //     costsTest[2, 0] = 7; costsTest[2, 1] = 3; costsTest[2, 2] = 8;
-    //     // The final 2 is added by the algorithm
-    //     NativeArray<int> expected = new NativeList<int>(3, Allocator.Temp) {0, 2, 1, 2}.AsArray(); // answersResult = {5, 9, 15}
-    //     NativeArray<int> result = MinCostAssignment(costsTest);
-    //     // Debug.Log("Hungarian: " + result[0] + ", " + result[1] + ", " + result[2] + ", " + result[3]);
-    //     // Debug.Log("expected: " + expected[0] + ", " + expected[1] + ", " + expected[2]);
-    //     Debug.Assert(MinCostAssignment(costsTest).ArraysEqual(expected), "Hungarian is wrong");
-    //     Debug.Log("Sanity check finished");
-    // }
 }
 }
+
+    // public static bool Is3DPolygonsIntersecting() {
+        
+    //     return false;
+    // }
+
+//     public static bool IsPolygonsIntersectingXZ(in Polygon polygon0, in Polygon polygon1) {
+//         Debug.Assert(polygon0.IsValid() || polygon1.IsValid(), "Invalid polygon");
+//         if (polygon0.NumVertices > polygon1.NumVertices) { // Minor optimization that potentially reduces for loop iterations
+//             return SeparatingAxisTheorem(polygon0, polygon1) && SeparatingAxisTheorem(polygon1, polygon0);
+//         } else {
+//             return SeparatingAxisTheorem(polygon1, polygon0) && SeparatingAxisTheorem(polygon0, polygon1);
+//         }
+//     }
+//     static bool SeparatingAxisTheorem(in Polygon polygon0, in Polygon polygon1) { // TODO: Add XZ suffix?
+//         for (int i = 0; i < polygon0.NumVertices; i++) {
+//             float3 edgeRight = -polygon0.GetEdgeRight(i);
+//             float3 edgeVert = polygon0.GetVertexPoint(i);
+
+//             CommonLib.DebugVector(polygon0.GetEdgeMidpoint(i), edgeRight*0.2f, Color.blue, 0.015f, 0.1f);
+
+//             bool isOverlapping = false;
+//             for (int j = 0; j < polygon1.NumVertices; j++) { // TODO: Use a MathLib PointToPlane function like below
+//                 float projectedDistance = math.dot(edgeRight, polygon1.GetVertexPoint(j) - edgeVert);
+//                 // float projectedDistance = PointToPlaneDistanceSigned(polygon1.GetVertexPoint(j), edgeRight, edgeVert);
+//                 if (projectedDistance < 0) {
+//                     isOverlapping = true; // Do not add break statement
+//                 }
+//             }
+//             if (!isOverlapping) {
+//                 return false;
+//             }
+//         }
+//         return true;
+//     }
+
+//     // SutherlandHodgman, burstified from Habrador
+//     public static NativeList<float3> ClipPolygon(in Polygon polygon, Polygon polygonClip, bool isProjClipToWorldXZ) {
+//         Debug.Assert(polygonClip.IsConvex(out bool _, 0f), "polygonClip must be convex");
+//         Debug.Assert(!isProjClipToWorldXZ || !IsVectorXZPlane(polygonClip.Plane.normal), "If isProjClipToXZ == true, then polygonClip cannot be vertical (i.e. normal cannot be XZ plane)");
+        
+//         // if (isProjClipToXZ) { polygonClip.ProjToXZPlane(); CommonLib.DebugPolygon(polygonClip, Color.black, 0f, 0.025f, false, 0.1f); }
+
+//         NativeList<float3> clipVertexPoints = new NativeList<float3>(polygon.NumVertices, Allocator.Temp);
+//         clipVertexPoints.AddRange(polygon.VertexPointsRO);
+
+//         NativeList<float3> clipVertexPointsTemp = new NativeList<float3>(polygon.NumVertices, Allocator.Temp);
+
+//         for (int i = 0; i < polygonClip.NumVertices; i++) {
+//             // TODO: ClipNormal should be perpendicular to up()
+//             float3 edgeVector = polygonClip.GetEdgeVector(i);
+//             float3 planeNormal = polygonClip.Plane.normal;
+//             if (isProjClipToWorldXZ) { edgeVector.y = 0; planeNormal = math.up(); }
+
+//             float3 edgeRight_ClipNormal = -polygonClip.GetEdgeRight(i); // Clipping plane normal, points inwards from polygon perspective
+
+//             float3 edgeVert_ClipPos = polygonClip.GetVertexPoint(i); // Clipping plane pos, arbitrarily on the clipping plane
+//             float edgeVert_ClipPlaneDist = CalcPlaneDistance(edgeRight_ClipNormal, edgeVert_ClipPos); // Clipping plane dist
+
+//             CommonLib.DebugVector(polygonClip.GetEdgeMidpoint(i), edgeRight_ClipNormal*0.2f, Color.blue, 0.015f, 0.1f);
+
+//             // bool isOverlapping = false;
+//             for (int j = 0; j < clipVertexPoints.Length; j++) {
+
+//                 float3 vert0Point = clipVertexPoints[j];
+//                 float3 vert1Point = clipVertexPoints[NextIndex(j, clipVertexPoints.Length)];
+
+//                 float point0ToClipDist = PointToPlaneDistanceSigned(vert0Point, edgeRight_ClipNormal, edgeVert_ClipPos); // TODO: Make negative or flip Leq/Geq below
+//                 float point1ToClipDist = PointToPlaneDistanceSigned(vert1Point, edgeRight_ClipNormal, edgeVert_ClipPos);
+
+//                 //TODO: What will happen if they are exactly 0? Should maybe use a tolerance of 0.001
+
+//                 //Case 1. Both are outside (= to the right), do nothing 
+
+//                 float3 rayVector = vert1Point - vert0Point;
+//                 if (point0ToClipDist >= 0f && point1ToClipDist >= 0f) { // Case 2. Both are inside (= to the left), save vert1Point
+//                     clipVertexPointsTemp.Add(vert1Point);
+//                 } else if (point0ToClipDist < 0f && point1ToClipDist >= 0f) { // Case 3. Outside -> Inside, save intersection point and vert1Point
+//                     if (!IsRayPlaneIntersecting(vert0Point, math.normalize(rayVector), math.length(rayVector)*5f, edgeRight_ClipNormal, edgeVert_ClipPlaneDist, out float3 nearestPointToPlane)) {
+//                         Debug.Assert(false, "Glitch");
+//                     }
+//                     clipVertexPointsTemp.Add(nearestPointToPlane);
+
+//                     clipVertexPointsTemp.Add(vert1Point);
+
+//                 } else if (point0ToClipDist >= 0f && point1ToClipDist < 0f) { // Case 4. Inside -> Outside, save intersection point
+//                     if (!IsRayPlaneIntersecting(vert0Point, math.normalize(rayVector), math.length(rayVector)*5f, edgeRight_ClipNormal, edgeVert_ClipPlaneDist, out float3 nearestPointToPlane)) {
+//                         Debug.Assert(false, "Glitch");
+//                     }
+//                     clipVertexPointsTemp.Add(nearestPointToPlane);
+//                 }
+
+//                 // if (isAddRayClipPlaneIntersection) {
+//                 //     float3 rayVector = vert1Point - vert0Point;
+//                 //     if (IsRayPlaneIntersecting(vert0Point, math.normalize(rayVector), math.length(rayVector), edgeRight_ClipNormal, edgeVert_ClipPlaneDist, out float3 nearestPointToPlane)) {
+//                 //         clipVertexPointsTemp.Add(nearestPointToPlane);
+//                 //     } else {
+//                 //         Debug.Assert(false, "Glitch");
+//                 //     }
+//                 // }
+//             }
+
+//             //Add the new vertices to the list of vertices
+//             clipVertexPoints.Clear();
+
+//             clipVertexPoints.AddRange(clipVertexPointsTemp.AsArray());
+
+//             clipVertexPointsTemp.Clear();
+//         }
+//         return clipVertexPoints;
+//     }
+
+//     // TODO: Is Grid an incorrect word? Grid should mean both vertical and horizontal gridlines. This function only does vertical (Same TODO as below)
+//     public static NativeList<float2> SegGridIntersections(float2 rayStart, float2 rayEnd, float2 bottomLeftCorner, float cellSize, bool is_OnlyX = false) {
+//         NativeList<float2> intersectionPoints = new NativeList<float2>((int)(math.length(rayEnd - rayStart)/cellSize), Allocator.Temp);
+//         // int numXGridLinesBtw = math.abs(endCoords.x - startCoords.x)+1;
+//         // int numYGridLinesBtw = (math.abs(endCoords.y - startCoords.y)+1) * (is_OnlyX ? 0 : 1);
+//         // intersectionPoints.SetCapacity(numXGridLinesBtw + numYGridLinesBtw);
+//         SegGridIntersections(rayStart, rayEnd, ref intersectionPoints, bottomLeftCorner, cellSize, is_OnlyX);
+//         return intersectionPoints;
+//     }
+//     public static NativeList<float2> SegGridIntersections(float2 segStart, float2 segEnd, ref NativeList<float2> intersectionPoints, float2 bottomLeftCorner, float cellSize, bool is_OnlyX = false) {
+//         Debug.Assert(!IsEpsEqual(segStart, segEnd, 0.001f), "start and end cannot be the same point");
+//         Debug.Assert(math.all(bottomLeftCorner <= segStart) && math.all(bottomLeftCorner <= segEnd), $"bottomLeftCorner must be LEQ start and end (X and Y), bottomLeftCorner: {bottomLeftCorner},  segStart: {segStart},  segEnd: {segEnd}");
+
+//         float2 segVector = segEnd - segStart;
+//         float2 startRelativeToBottomLeftPos = (segStart - bottomLeftCorner) / cellSize; // Needed
+
+//         int2 startCoords = WorldToCellCoords(segStart, bottomLeftCorner, cellSize);
+//         int2 endCoords = WorldToCellCoords(segEnd, bottomLeftCorner, cellSize);
+
+//         int signY = (segVector.y > 0) ? 1 : -1;
+//         int signX = (segVector.x > 0) ? 1 : -1;
+//         float slopeM = segVector.y / segVector.x;
+//         if (segVector.x == 0f) { slopeM = 100000f; }
+//         float interceptB = (-slopeM * startRelativeToBottomLeftPos.x) + startRelativeToBottomLeftPos.y;
+
+//         int numXGridLinesBtw = math.abs(endCoords.x - startCoords.x);
+//         int boolX = (signX > 0) ? 1 : 0; // For offsetting x axis values when seg is negative x
+//         int boolY = (signY > 0) ? 1 : 0;
+
+//         int currentX = startCoords.x + (1 - boolX);
+//         int currentY = startCoords.y;
+//         for (int i = 0; i < numXGridLinesBtw; i++) {
+//             int X = startCoords.x + (i * signX) + boolX;
+//             float YExact = slopeM * X + interceptB;
+//             int Y = (int)YExact; // y = m * x + b (where b is initial z position)
+
+            
+//             if (!is_OnlyX) {
+//                 for (int Y0 = currentY; Y0 != Y; Y0 += signY) {
+//                     float XExact = ((Y0 + boolY) - interceptB) / slopeM; // x = (y - b)/m
+//                     intersectionPoints.Add(bottomLeftCorner + (cellSize * new float2(XExact, (Y0 + boolY))));
+
+//                     if (math.abs(Y0 - Y) > 100) { Debug.Assert(false, "Too many, infinite loop, may be outside bottomLeftCorner"); break; }
+//                 }
+//             }
+//             intersectionPoints.Add(bottomLeftCorner + (cellSize * new float2((currentX + signX), YExact)));
+//             currentX = X;  currentY = Y;
+//         }
+
+//         if (!is_OnlyX) {
+//             for (int Y0 = currentY; Y0 != endCoords.y; Y0 += signY) {
+//                 float XExact = ((Y0 + boolY) - interceptB) / slopeM; // x = (y - b)/m
+//                 intersectionPoints.Add(bottomLeftCorner + (cellSize * new float2(XExact, (Y0 + boolY))));
+
+//                 if (math.abs(Y0 - endCoords.y) > 100) { Debug.Assert(false, "Too many, infinite loop, may be outside bottomLeftCorner"); break; }
+//             }
+//         }
+
+//         return intersectionPoints;
+//     }
+
+//     // TODO: is_OnlyX seems like it should not be a parameter and always given to SegGridIntersections()'s parameter as true
+//     // TODO: Is Grid an incorrect word? Grid should mean both vertical and horizontal gridlines. This function only does vertical (Same TODO as above)
+//     // Takes only the xz plane of polygon
+//     public static void PolygonGridIntersectionsTopBottom(in Polygon polygon, float3 bottomLeftCorner, float cellSize,
+//         out NativeList<float2> bottomEdgeIntersections, out NativeList<float2> topEdgeIntersections, bool is_OnlyX = false) // Add check if ray is out of bounds
+//     {
+//         Debug.Assert(polygon.IsValid(), "Invalid polygon");
+//         // Debug.Log("polygon.IsGroundCCW: " + polygon.IsGroundCCW);
+//         Debug.Assert(polygon.NumVertices > 0, "Empty polygon");
+
+//         bottomEdgeIntersections = new NativeList<float2>(1, Allocator.Temp); // All cell Intersections of only rasterized bottom edge of polygon, and only one cell coord per X
+//         topEdgeIntersections = new NativeList<float2>(1, Allocator.Temp);    // Same but for top edge
+//         NativeList<float2> currentEdgeIntersections; // Will reference either bottomEdge or topEdge Intersections
+
+//         // Find the first instance around the polygon that edges switch from top to bottom (end) or vice versa:
+//         int startingEdgeIndex = FindFirstEdgeSwitchingEnds(polygon, out bool isCurrentEdgeTop);
+//         currentEdgeIntersections = isCurrentEdgeTop ? topEdgeIntersections : bottomEdgeIntersections;
+//         Debug.Assert(startingEdgeIndex != -1, "Broken polygon");
+
+//         // int colorIndex = 0; // Debug
+//         for (int i0 = startingEdgeIndex; i0 < polygon.NumVertices + startingEdgeIndex; i0++) { // Now goes around polygon edges and adds to current end Intersections
+//             int index = i0;
+//             if (i0 >= polygon.NumVertices) { // TODO: Replace with mod
+//                 index = i0 - polygon.NumVertices;
+//             }
+//             int i = i0 % polygon.NumVertices; // Pretty sure this is the answer to the above TODO
+//             Debug.Assert(i == index, "Indices not equal");
+
+//             float3 edgeVector = polygon.GetEdgeVectorWise(index, polygon.IsXZCCW);
+//             // CommonLib.CreatePrimitive(PrimitiveType.Cube, edge.CalcMidpoint(), new float3(0.05f), CommonLib.CycleColors[colorIndex++]);
+
+//             bool isTopEdge = edgeVector.x > 0;
+//             if (isTopEdge ^ isCurrentEdgeTop) { // If detect a switch of ends based on edge direction, switch current Intersections and don't remove last element
+//                 // Debug.Log("Switching ends");
+//                 isCurrentEdgeTop = isTopEdge; // Update our bool variable that tells us which end we are currently on
+//                 currentEdgeIntersections = isTopEdge ? topEdgeIntersections : bottomEdgeIntersections; // Switch to correct end Intersections list (top or bottom)
+//             }
+//             float3 edgeStart = polygon.GetVertexPointWise(index, polygon.IsXZCCW);  float3 edgeEnd = polygon.GetNextVertexPointWise(index, polygon.IsXZCCW);
+//             SegGridIntersections(edgeStart.xz, edgeEnd.xz, ref currentEdgeIntersections, bottomLeftCorner.xz, cellSize, is_OnlyX);
+//         }
+//     }
+
+//     public static NativeList<int2> RasterPolygon(in Polygon polygon, float3 bottomLeftCorner, float cellSize, out IntRect XYBounds, bool isOnlyCellCenterInside = false, int inset = 0) // Add check if ray is out of bounds
+//     {
+//         Debug.Assert(polygon.IsValid(), "Invalid polygon");
+
+//         RasterPolygonTopBottom(polygon, bottomLeftCorner, cellSize, out NativeList<int2> bottomEdgeCellCoords, out NativeList<int2> topEdgeCellCoords);
+
+//         NativeList<int2> rasterCellCoords = new NativeList<int2>(1, Allocator.Temp); // All cell coords of fully rasterized polygon (if a cell is barely clipped, it will still be included)
+//         // bottomEdgeCellCoords.(default, 0);
+//         Debug.Assert(bottomEdgeCellCoords.Length == topEdgeCellCoords.Length);
+//         int numXCoords = bottomEdgeCellCoords.Length;
+//         XYBounds = new IntRect(bottomEdgeCellCoords[numXCoords-1].x, int.MinValue, bottomEdgeCellCoords[0].x, int.MaxValue);
+//         Debug.Assert(XYBounds.xMin <= XYBounds.xMax, "minX must be less than or equal to maxX");
+
+//         for (int i = inset; i < numXCoords - inset; i++) { // Now iterate from bottomY to topY for each X and add new int2(X, Y) to final raster coords
+//             int X = bottomEdgeCellCoords[i].x;
+//             int bottomY = bottomEdgeCellCoords[i].y; // (numXCoords - 1) - i
+//             int topY = topEdgeCellCoords[ReverseIndex(i, numXCoords)].y; // topEdgeCellCoords are in reverse order of bottomEdgeCellCoords
+//             XYBounds.yMin = math.min(bottomY, XYBounds.yMin);
+//             XYBounds.yMax = math.max(topY, XYBounds.yMax);
+
+//             Debug.Assert(bottomY <= topY, "topY must be greater than or equal to bottomY");
+//             for (int Y = bottomY + inset; Y <= topY - inset; Y++) {
+//                 // Debug.Log("Is 1D: " + Index2DTo1D(new int2(X, Y)));
+//                 if (isOnlyCellCenterInside && !polygon.IsPointInConvex(CellCoordsToWorld(new int2(X, Y), bottomLeftCorner, cellSize))) { continue; }
+//                 rasterCellCoords.Add(new int2(X, Y));
+//             }
+//         }
+//         return rasterCellCoords;
+//     }
+//     static int FindFirstEdgeSwitchingEnds(in Polygon polygon, out bool isStartingEdgeTop) {
+//         Debug.Assert(polygon.IsValid(), "Invalid polygon");
+//         bool isCurrentEdgeTop = polygon.GetEdgeVectorWise(0, polygon.IsXZCCW).x > 0;
+//         for (int i = 1; i < polygon.NumVertices; i++) { // Finds the first instance around the polygon that edges switch from top to bottom (end) or vice versa
+//             bool isTopEdge = polygon.GetEdgeVectorWise(i, polygon.IsXZCCW).x > 0;
+//             if (isTopEdge ^ isCurrentEdgeTop) {
+//                 isStartingEdgeTop = isTopEdge;
+//                 return i;
+//             }
+//         }
+//         isStartingEdgeTop = false;
+//         return -1;
+//     }
+//     public static void RasterPolygonTopBottom(in Polygon polygon, float3 bottomLeftCorner, float cellSize,
+//         out NativeList<int2> bottomEdgeCellCoords, out NativeList<int2> topEdgeCellCoords) // Add check if ray is out of bounds
+//     {
+//         Debug.Assert(polygon.IsValid(), "Invalid polygon");
+//         // Debug.Log("polygon.IsGroundCCW: " + polygon.IsGroundCCW);
+//         Debug.Assert(polygon.NumVertices > 0, "Empty polygon");
+
+//         bottomEdgeCellCoords = new NativeList<int2>(1, Allocator.Temp); // All cell coords of only rasterized bottom edge of polygon, and only one cell coord per X
+//         topEdgeCellCoords = new NativeList<int2>(1, Allocator.Temp);    // Same but for top edge
+//         NativeList<int2> currentEdgeCellCoords; // Will reference either bottomEdge or topEdge CellCoords
+
+//         // Find the first instance around the polygon that edges switch from top to bottom (end) or vice versa:
+//         int startingEdgeIndex = FindFirstEdgeSwitchingEnds(polygon, out bool isCurrentEdgeTop);
+//         currentEdgeCellCoords = isCurrentEdgeTop ? topEdgeCellCoords : bottomEdgeCellCoords;
+//         currentEdgeCellCoords.Add(new int2(int.MaxValue)); // To make the RemoveAt last index below work for the first edge iteration below (i.e. this will be removed)
+//         // Debug.Log("startingEdgeIndex: " + startingEdgeIndex);
+//         // Debug.Log("isTopEdge: " + isTopEdge);
+//         Debug.Assert(startingEdgeIndex != -1, "Broken polygon");
+
+//         // int colorIndex = 0; // Debug
+//         for (int i0 = startingEdgeIndex; i0 < polygon.NumVertices + startingEdgeIndex; i0++) { // Now goes around polygon edges and adds to current end Coords
+//             int index = i0;
+//             if (i0 >= polygon.NumVertices) { // TODO: Replace with mod
+//                 index = i0 - polygon.NumVertices;
+//             }
+//             int i = i0 % polygon.NumVertices; // Pretty sure this is the answer to the above TODO
+//             Debug.Assert(i == index, "Indices not equal");
+
+//             float3 edgeVector = polygon.GetEdgeVectorWise(index, polygon.IsXZCCW);
+//             // CommonLib.CreatePrimitive(PrimitiveType.Cube, edge.CalcMidpoint(), new float3(0.05f), CommonLib.CycleColors[colorIndex++]);
+
+//             int lastElementIndex = currentEdgeCellCoords.Length - 1; int2 lastElement = new int2(int.MaxValue);
+//             bool isTopEdge = edgeVector.x > 0;
+//             if (isTopEdge ^ isCurrentEdgeTop) { // If detect a switch of ends based on edge direction, switch current Coords and don't remove last element
+//                 // Debug.Log("Switching ends");
+//                 isCurrentEdgeTop = isTopEdge; // Update our bool variable that tells us which end we are currently on
+//                 currentEdgeCellCoords = isTopEdge ? topEdgeCellCoords : bottomEdgeCellCoords; // Switch to correct end Coords list (top or bottom)
+//             } else {
+//                 // Debug.Log("Removing last");
+//                 lastElement = currentEdgeCellCoords[lastElementIndex]; // Save this to compare with next iteration's cell coord to see if will cause gap
+//                 currentEdgeCellCoords.RemoveAt(lastElementIndex); // Remove last element so no duplicates because (this?) next iteration will write its coords too
+//             }
+//             bool isZPositive = edgeVector.z > 0;
+//             bool isReverseRay = isTopEdge ^ isZPositive; // Make RasterEdge work properly (enforce top is top raster and vice versa)
+//                 Debug.Assert(isReverseRay == ((!isTopEdge && isZPositive) || (isTopEdge && !isZPositive)), "Is somehow NOT same as XOR");
+//             // Raster so only one cell coord per X cell (for each end)
+//             float3 edgeStart = polygon.GetVertexPointWise(index, polygon.IsXZCCW);  float3 edgeEnd = polygon.GetNextVertexPointWise(index, polygon.IsXZCCW);
+
+//                 if (IsEpsEqual(edgeStart, edgeEnd, 0.001f)) {
+//                     Debug.LogError("Start and end cannot be the same");
+//                     // CommonLib.DebugPolygon(polygon, Color.blue);
+//                 }
+
+//             RasterEdge(edgeStart.xz, edgeEnd.xz, ref currentEdgeCellCoords, bottomLeftCorner.xz, cellSize, isReverseRay);
+
+//             // This compares the Y value of the lastElement of the prev edge raster with the first element of this edge raster (same end) and takes the more extreme
+//             // lastElement is also technically the very first element
+//             if (lastElement.x != int.MaxValue) { // This means that Coords list was not swapped (or it's starting edge) and last element of previous iteration was removed
+//                 int2 thatReplacedLastElement = currentEdgeCellCoords[lastElementIndex];
+//                 // If top edge, then take the most maximum Y,        but if bottom edge, then take the lowest Y
+//                 if ((isTopEdge && lastElement.y > thatReplacedLastElement.y) || (!isTopEdge && lastElement.y < thatReplacedLastElement.y)) {
+//                     currentEdgeCellCoords[lastElementIndex] = lastElement;
+//                     // Debug.Log("isTopEdge: " + isTopEdge + "  ,  Replacing");
+//                     // CommonLib.CreatePrimitive(PrimitiveType.Cube, CellCoordsToWorld(thatReplacedLastElement) + new float3(0,0.5f,0.1f), new float3(0.3f), Color.black, default, 5f);
+//                     // CommonLib.CreatePrimitive(PrimitiveType.Cube, CellCoordsToWorld(lastElement) + new float3(0,0.5f,-0.1f), new float3(0.3f), Color.white, default, 5f);
+//                 }
+
+
+//                 /* if (isTopEdge) {
+//                     if (lastElement.y > thatReplacedLastElement.y) {
+//                         Debug.Log("isTopEdge: " + isTopEdge + "  ,  Replacing");
+//                         currentEdgeCellCoords[lastElementIndex] = lastElement;
+//                         CommonLib.CreatePrimitive(PrimitiveType.Cube, CellCoordsToWorld(thatReplacedLastElement) + new float3(0,0.5f,0.1f), new float3(0.3f), Color.black, default, 5f);
+//                         CommonLib.CreatePrimitive(PrimitiveType.Cube, CellCoordsToWorld(lastElement) + new float3(0,0.5f,-0.1f), new float3(0.3f), Color.white, default, 5f);
+//                     }
+//                 } else {
+//                     if (lastElement.y < thatReplacedLastElement.y) {
+//                         Debug.Log("isTopEdge: " + isTopEdge + "  ,  Replacing");
+//                         currentEdgeCellCoords[lastElementIndex] = lastElement;
+//                         CommonLib.CreatePrimitive(PrimitiveType.Cube, CellCoordsToWorld(thatReplacedLastElement) + new float3(0,0.5f,0.1f), new float3(0.3f), Color.black, default, 5f);
+//                         CommonLib.CreatePrimitive(PrimitiveType.Cube, CellCoordsToWorld(lastElement) + new float3(0,0.5f,-0.1f), new float3(0.3f), Color.white, default, 5f);
+//                     }
+//                 } */
+//             }
+//         }
+//     }
+
+//     public static void RasterEdge(float2 edgeStart, float2 edgeEnd, ref NativeList<int2> rasterCellCoords, float2 bottomLeftCorner, float cellSize, bool isReverse = false)
+//     {
+//         Debug.Assert(!IsEpsEqual(edgeStart, edgeEnd, 0.001f), $"start and end cannot be the same point; {edgeStart}, {edgeEnd}");
+//         Debug.Assert(math.all(bottomLeftCorner <= edgeStart) && math.all(bottomLeftCorner <= edgeEnd), $"bottomLeftCorner must be LEQ start and end (X and Y), bottomLeftCorner: {bottomLeftCorner},  edgeStart: {edgeStart},  edgeEnd: {edgeEnd}");
+//         // CommonLib.CreatePrimitive(PrimitiveType.Cube, edgeStart + new float3(0.1f, 0, 0), new float3(0.3f, 0.6f, 0.3f), Color.green, default, 5f);
+//         // CommonLib.CreatePrimitive(PrimitiveType.Cube, edgeEnd - new float3(0.1f, 0, 0), new float3(0.3f, 0.6f, 0.3f), Color.red, default, 5f);
+//         float2 rayVector = edgeEnd - edgeStart;
+//         float2 startRelativeToBottomLeftPos = (edgeStart - bottomLeftCorner) / cellSize;
+
+//         int2 startCoords = WorldToCellCoords(edgeStart, bottomLeftCorner, cellSize);
+//         int2 endCoords = WorldToCellCoords(edgeEnd, bottomLeftCorner, cellSize);
+
+//         int signY = (rayVector.y > 0) ? 1 : -1;
+//         int signX = (rayVector.x > 0) ? 1 : -1;
+//         float slopeM = rayVector.y / rayVector.x;
+//         if (rayVector.x == 0f) { slopeM = 100000f; }
+//         float interceptB = (-slopeM * startRelativeToBottomLeftPos.x) + startRelativeToBottomLeftPos.y;
+
+//         int numXGridLinesBtw = math.abs(endCoords.x - startCoords.x);
+//         int boolX = (signX > 0) ? 1 : 0; // For offsetting x axis values when ray is negative x
+
+//         int currentX = startCoords.x + (1 - boolX);  int currentY = startCoords.y;
+//         for (int I = 0; I < numXGridLinesBtw; I++) {
+//             int X = startCoords.x + (I * signX) + boolX;
+//             int Y = (int)(slopeM * X + interceptB); // y = m * x + b (where b is initial z position)
+
+//             int YUsing = isReverse ? currentY : Y;
+            
+//             rasterCellCoords.Add(new int2(currentX - (1 - boolX), YUsing));
+//             currentX = X;  currentY = Y;
+//         }
+//         int YUsing2 = isReverse ? currentY : endCoords.y;
+//         rasterCellCoords.Add(new int2(currentX - (1 - boolX), YUsing2));
+//     }
+
+//     // public static NativeList<int2> RasterRay(RayInput seg, float2 bottomLeftCorner, float cellSize) { return RasterSeg(seg.start.xz, seg.end.xz, bottomLeftCorner, cellSize); }
+//     public static NativeList<int2> RasterSeg(float2 segStart, float2 segEnd, float2 bottomLeftCorner, float cellSize) {
+//         NativeList<int2> rasterCellCoords = new NativeList<int2>((int)(math.length(segEnd - segStart)/cellSize), Allocator.Temp); // Resize NativeList is more expensive
+//         RasterSeg(segStart, segEnd, ref rasterCellCoords, bottomLeftCorner, cellSize);
+//         return rasterCellCoords;
+//     }
+
+//     public static void RasterSeg(float2 segStart, float2 segEnd, ref NativeList<int2> rasterCellCoords, float2 bottomLeftCorner, float cellSize)
+//     {
+//         Debug.Assert(!IsEpsEqual(segStart, segEnd, 0.001f), "start and end cannot be the same point");
+//         Debug.Assert(math.all(bottomLeftCorner <= segStart) && math.all(bottomLeftCorner <= segEnd), $"bottomLeftCorner must be LEQ start and end (X and Y),  bottomLeftCorner: {bottomLeftCorner},  segStart: {segStart},  segEnd: {segEnd}");
+//         float2 segVector = segEnd - segStart;
+//         float2 startRelativeToBottomLeftPos = (segStart - bottomLeftCorner) / cellSize;
+
+//         int2 startCoords = WorldToCellCoords(segStart, bottomLeftCorner, cellSize);
+//         int2 endCoords = WorldToCellCoords(segEnd, bottomLeftCorner, cellSize);
+
+//         int signY = (segVector.y > 0) ? 1 : -1;
+//         int signX = (segVector.x > 0) ? 1 : -1;
+//         float slopeM = segVector.y / segVector.x;
+//         if (segVector.x == 0f) { slopeM = 100000f; }
+//         float interceptB = (-slopeM * startRelativeToBottomLeftPos.x) + startRelativeToBottomLeftPos.y;
+
+//         int numXGridLinesBtw = math.abs(endCoords.x - startCoords.x);
+//         int boolX = (signX > 0) ? 1 : 0; // For offsetting x axis values when ray is negative x
+
+//         int currentX = startCoords.x + (1 - boolX);  int currentY = startCoords.y;
+//         for (int I = 0; I < numXGridLinesBtw; I++) {
+//             int X = startCoords.x + (I * signX) + boolX;
+//             int Y = (int)(slopeM * X + interceptB); // y = m * x + b (where b is initial z position)
+            
+//             for (int Y0 = currentY; Y0 != Y + signY; Y0 += signY)
+//                 rasterCellCoords.Add(new int2(currentX - (1 - boolX), Y0));
+
+//             currentX = X;  currentY = Y;
+//         }
+//         for (int Y0 = currentY; Y0 != endCoords.y + signY; Y0 += signY)
+//             rasterCellCoords.Add(new int2(currentX - (1 - boolX), Y0));
+//     }
+
+//     // TODO: Call RasterRect(int2 bottomLeftCell, int2 topRightCell)
+//     // public static NativeList<int2> RasterRect(float3 bottomLeftPosition, float3 topRightPosition, float2 bottomLeftCorner, float cellSize) {}
+//     public static NativeArray<int2> RasterRect(int2 bottomLeftCell, int2 topRightCell) {
+//         IntRect cellsRect = new IntRect(bottomLeftCell, topRightCell);
+//         NativeArray<int2> rasterCellCoords = new NativeArray<int2>(cellsRect.Area(), Allocator.Temp);
+
+//         int num = 0;
+//         for (int X = bottomLeftCell.x; X <= topRightCell.x; X++) {
+//             for (int Y = bottomLeftCell.y; Y <= topRightCell.y; Y++) {
+//                 rasterCellCoords[num++] = new int2(X, Y);
+//             }
+//         }
+//         return rasterCellCoords;
+//     }
+
+
+//     // https://en.wikipedia.org/wiki/Hungarian_algorithm#Matrix_interpretation
+//     [MI(AggressiveInlining)] private static bool ckmin(ref float a, float b) { if (b < a) { a = b; return true; } else { return false; } }
+
+// //     public static NativeArray<int> MinCostAssignment(in Native2DArray<float> costs) { // Hungarian
+// //         int J = costs.LengthX, W = costs.LengthY;
+// //         Debug.Assert(J <= W, "Definitely a correct Assertion");
+// //         // job[w] = job assigned to w-th worker, or -1 if no job assigned
+// //         // note: a W-th worker was added for convenience
+// //         NativeArray<int> job = new (W + 1, Allocator.Temp);
+// //         job.Fill(-1);
+        
+// //         NativeArray<float> ys = new (J, Allocator.Temp); // potentials
+// //         NativeArray<float> yt = new (W + 1, Allocator.Temp); // -yt[W] will equal the sum of all deltas
+// //         NativeList<float> answers = new (J, Allocator.Temp);
+
+// //         NativeArray<float> min_to = new (W + 1, Allocator.Temp); //min_to.Fill(float.MaxValue);
+// //         NativeArray<int> prv = new (W + 1, Allocator.Temp); //prv.Fill(-1); // previous worker on alternating path
+// //         NativeArray<bool> in_Z = new (W + 1, Allocator.Temp); // whether worker is in Z
+
+// //         for (int j_cur = 0; j_cur < J; ++j_cur) {  // assign j_cur-th job
+// //             int w_cur = W;
+// //             job[w_cur] = j_cur;
+            
+// //             min_to.Fill(float.MaxValue); // min reduced cost over edges from Z to worker w
+// //             prv.Fill(-1);
+// //             in_Z.Clear();
+
+// //             while (job[w_cur] != -1) { // runs at most j_cur + 1 times
+// //                 in_Z[w_cur] = true;
+// //                 int j = job[w_cur];
+// //                 float delta = float.MaxValue;
+// //                 int w_next = default;
+// //                 for (int w = 0; w < W; ++w) {
+// //                     if (!in_Z[w]) {                    // TODO: [j][w] should work too! It doesn't
+// //                         if (ckmin(ref min_to.ElementAt(w), costs[j, w] - ys[j] - yt[w])) {
+// //                             prv[w] = w_cur;
+// //                         }
+// //                         if (ckmin(ref delta, min_to[w])) {
+// //                             w_next = w;
+// //                         }
+// //                     }
+// //                 }
+// //                 // delta will always be non-negative, except possibly during the first time
+// //                 // this loop runs if any entries of C[j_cur] are negative
+// //                 for (int w = 0; w <= W; ++w) {
+// //                     if (in_Z[w]) {
+// //                         ys[job[w]] += delta;
+// //                         yt[w] -= delta;
+// //                     } else {
+// //                         min_to[w] -= delta;
+// //                     }
+// //                 }
+// //                 w_cur = w_next;
+// //             }
+// //             // update assignments along alternating path
+// //             for (int w; w_cur != W; w_cur = w) {
+// //                 w = prv[w_cur];
+// //                 job[w_cur] = job[w];
+// //             }
+// //             answers.AddNoResize(-yt[W]);
+// //         }
+// //         return job;
+// //     }
+
+// //     /**
+// //     * Sanity check: https://en.wikipedia.org/wiki/Hungarian_algorithm#Example
+// //     * First job (5):
+// //     *   clean bathroom: Bob -> 5
+// //     * First + second jobs (9):
+// //     *   clean bathroom: Bob -> 5
+// //     *   sweep floors: Alice -> 4
+// //     * First + second + third jobs (15):
+// //     *   clean bathroom: Alice -> 8
+// //     *   sweep floors: Dora -> 4
+// //     *   wash windows: Bob -> 3
+// //     */
+// //     public static void SimpleHungarianTest() {
+// //         Native2DArray<float> costsTest = new Native2DArray<float>(3, 3, Allocator.Temp); // { [0] = 8, 5, 9, 4, 2, 4, 7, 3, 8 };
+// //         costsTest[0, 0] = 8; costsTest[0, 1] = 5; costsTest[0, 2] = 9;
+// //         costsTest[1, 0] = 4; costsTest[1, 1] = 2; costsTest[1, 2] = 4;
+// //         costsTest[2, 0] = 7; costsTest[2, 1] = 3; costsTest[2, 2] = 8;
+// //         // The final 2 is added by the algorithm
+// //         NativeArray<int> expected = new NativeList<int>(3, Allocator.Temp) {0, 2, 1, 2}.AsArray(); // answersResult = {5, 9, 15}
+// //         NativeArray<int> result = MinCostAssignment(costsTest);
+// //         // Debug.Log("Hungarian: " + result[0] + ", " + result[1] + ", " + result[2] + ", " + result[3]);
+// //         // Debug.Log("expected: " + expected[0] + ", " + expected[1] + ", " + expected[2]);
+// //         Debug.Assert(MinCostAssignment(costsTest).ArraysEqual(expected), "Hungarian is wrong");
+// //         Debug.Log("Sanity check finished");
+// //     }
+// }
+// }

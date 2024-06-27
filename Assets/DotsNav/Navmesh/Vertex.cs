@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 
 namespace DotsNav.Navmesh
@@ -6,7 +7,7 @@ namespace DotsNav.Navmesh
     /// <summary>
     /// A vertex in the triangulation. Updating the navmesh invalidates this structure.
     /// </summary>
-    public unsafe struct Vertex
+    public unsafe struct Vertex : IRefable
     {
         [System.Flags]
         public enum Type : byte {
@@ -18,6 +19,8 @@ namespace DotsNav.Navmesh
         /// Returns the position of this vertex
         /// </summary>
         public float2 Point { get; internal set; }
+        public float elevation;
+        public readonly float3 Point3D => Point.XOY(elevation);
 
         Edge* MajorEdge;
         Edge* MinorEdge;
@@ -76,6 +79,10 @@ namespace DotsNav.Navmesh
 
         public override string ToString() =>
             $"{Point.x:F}, {Point.y:F}";
+
+        public bool IsValid() {
+            return true;
+        }
 
         /// <summary>
         /// Allows for enumerating all edges that share this vertex as their origin. Updating the navmesh invalidates this structure.

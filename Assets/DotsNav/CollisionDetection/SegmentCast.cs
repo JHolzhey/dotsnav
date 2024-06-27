@@ -98,7 +98,7 @@ namespace DotsNav.CollisionDetection
                     var e = (Edge*) open[i];
                     if (IntersectSegSeg(o, d, e->Org->Point, e->Dest->Point, out var p))
                     {
-                        if (e->Constrained)
+                        if (e->IsConstrained)
                             if (!segmentCast.RegisterCollision(p, e))
                                 return;
                         tri = e->Sym;

@@ -18,6 +18,7 @@ namespace DotsNav.Navmesh.Systems
     [RequireMatchingQueriesForUpdate] // todo doesnt work?
     public unsafe partial struct UpdateNavmeshSystem : ISystem
     {
+        int numMajorInMinorInsertions;
         EntityQuery _navmeshQuery;
         EntityQuery _destroyQuery;
         EntityQuery _insertQuery;
@@ -35,6 +36,7 @@ namespace DotsNav.Navmesh.Systems
         [BurstDiscard]
         public void OnCreate(ref SystemState state)
         {
+            numMajorInMinorInsertions = 0;
             _navmeshQuery = 
                 new EntityQueryBuilder(Allocator.Temp)
                     .WithAll<NavmeshComponent>()
@@ -199,7 +201,7 @@ namespace DotsNav.Navmesh.Systems
                     /* dependency =  */new DestroyJob
                     {
                         Data = data,
-                        Buffer = ecb
+                        Ecb = ecb
                     }.Run(_destroyQuery); // .Schedule(_destroyQuery, dependency);
 
                     /* dependency =  */new RemoveRefinementsJob { Data = data }.Run(); // .Schedule(dependency);
@@ -210,7 +212,7 @@ namespace DotsNav.Navmesh.Systems
                     // /* dependency =  */new InsertJob
                     // {
                         var Data = data;
-                        var Buffer = ecb;
+                        var Ecb = ecb;
                     // }.Run(_insertQuery); // .Schedule(_insertQuery, dependency);
 
                     foreach (var (obstacle, vertices, localToWorld, entity) in SystemAPI.Query<RefRW<NavmeshObstacleComponent>, DynamicBuffer<VertexElement>, RefRO<LocalToWorld>>().WithEntityAccess()) {
@@ -218,7 +220,7 @@ namespace DotsNav.Navmesh.Systems
                         // {
                             var navmesh = Data.Value.Navmesh;
                             var ltw = math.mul(Data.Value.PlaneLtwInv, localToWorld.ValueRO.Value);
-                            Buffer.AddSharedComponent(entity, new CleanUpObstacleComponent { Plane = Data.Value.Plane });
+                            Ecb.AddSharedComponent(entity, new CleanUpObstacleComponent { Plane = Data.Value.Plane });
 
                             if (Data.Value.Empty)
                             {
@@ -242,18 +244,51 @@ namespace DotsNav.Navmesh.Systems
                     /* dependency =  */new BlobJob
                     {
                         Data = data,
-                        Buffer = ecb
+                        Ecb = ecb
                     }.Run(_blobQuery); // .Schedule(_blobQuery, dependency);
                 }
                 
                 if (!blobBulkIsEmpty) 
                     /* dependency =  */new BlobBulkJob { Data = data }.Run(); // .Schedule(_blobBulkQuery, dependency);
 
-                /* dependency =  */new PostJob
-                {
-                    Data = data,
-                    DestroyedTriangleBufferLookup = _destroyedTriangleBufferLookup,
-                }.Run(); // .Schedule(dependency);
+                // /* dependency =  */new PostJob
+                // {
+                //     Data = data,
+                //     DestroyedTriangleBufferLookup = _destroyedTriangleBufferLookup,
+                // }.Run(); // .Schedule(dependency);
+
+
+                    // PostJob, DELETE:
+                    // public void Execute()
+                    {
+                        var navmesh = data.Value.Navmesh;
+                        
+                        if (data.Value.Empty) {
+                            // navmesh->GlobalRefine();
+                        } else {
+                            // navmesh->LocalRefinement();
+                        }
+
+                        UnityEngine.Debug.Log($"InsetMajorInMinor; numMajorInMinorInsertions: {numMajorInMinorInsertions}, AddedOrModifiedMajorEdges.Length: {navmesh->AddedOrModifiedMajorEdges.Length}, OKUUUURRRRRRRR");
+                        foreach (IntPtr e in navmesh->AddedOrModifiedMajorEdges) {
+                            Edge* edge = (Edge*)e;
+                            // if (numMajorInMinorInsertions < 8) {
+                                navmesh->InsertMajorInMinor(edge);
+                            // }
+                            numMajorInMinorInsertions++;
+                        }
+                        navmesh->AddedOrModifiedMajorEdges.Clear();
+
+
+                        var destroyedTriangles = _destroyedTriangleBufferLookup[data.Value.Plane];
+                        destroyedTriangles.Clear();
+                        var tris = navmesh->DestroyedTriangles.GetEnumerator();
+                        while (tris.MoveNext()) {
+                            destroyedTriangles.Add(tris.Current);
+                        }
+                        destroyedTriangles.Reinterpret<int>().AsNativeArray().Sort();
+                    }
+
 
 
                 if (!insertTerrainIsEmpty)
@@ -261,7 +296,7 @@ namespace DotsNav.Navmesh.Systems
                     // /* dependency =  */new InsertTerrainJob
                     // {
                         var Data = data;
-                        var Buffer = ecb;
+                        var Ecb = ecb;
                     // }.Run(_insertQuery); // .Schedule(_insertQuery, dependency);
 
                     foreach (var (terrain, vertices, localToWorld, entity) in SystemAPI.Query<RefRW<NavmeshTerrainComponent>, DynamicBuffer<VertexElement>, RefRO<LocalToWorld>>().WithEntityAccess()) {
@@ -269,7 +304,7 @@ namespace DotsNav.Navmesh.Systems
                         // {
                             var navmesh = Data.Value.Navmesh;
                             var ltw = math.mul(Data.Value.PlaneLtwInv, localToWorld.ValueRO.Value);
-                            Buffer.AddSharedComponent(entity, new CleanUpTerrainComponent { Plane = Data.Value.Plane }); // TODO: Use EntityQuery version of this?
+                            Ecb.AddSharedComponent(entity, new CleanUpTerrainComponent { Plane = Data.Value.Plane }); // TODO: Use EntityQuery version of this?
 
                             if (Data.Value.Empty)
                             {
@@ -278,7 +313,7 @@ namespace DotsNav.Navmesh.Systems
                             else
                             {
                                 navmesh->C.Clear();
-                                navmesh->InsertMinor((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
+                                navmesh->InsertMinorCost((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, 3, ltw);
                                 // navmesh->SearchDisturbances(); // Minor doesn't have Disturbances
                             }
                         // }
@@ -287,11 +322,16 @@ namespace DotsNav.Navmesh.Systems
 
                 if (!destroyTerrainIsEmpty)
                 { 
-                    /* dependency =  */new DestroyTerrainJob
-                    {
-                        Data = data,
-                        Buffer = ecb
-                    }.Run(_destroyTerrainQuery); // .Schedule(_destroyQuery, dependency);
+                    // /* dependency =  */new DestroyTerrainJob
+                    // {
+                    //     Data = data,
+                    //     Ecb = ecb
+                    // }.Run(_destroyTerrainQuery); // .Schedule(_destroyQuery, dependency);
+
+                    foreach (var (_, entity) in SystemAPI.Query<CleanUpTerrainComponent>().WithNone<NavmeshTerrainComponent>().WithEntityAccess()) {
+                        data.Value.Navmesh->RemoveConstraintMinor(entity);
+                        ecb.RemoveComponent<CleanUpTerrainComponent>(entity);
+                    }
                 }
                 
                 //dependencies.Add(dependency);
@@ -329,12 +369,12 @@ namespace DotsNav.Navmesh.Systems
         partial struct DestroyJob : IJobEntity
         {
             public NativeReference<JobData> Data;
-            public EntityCommandBuffer Buffer;
+            public EntityCommandBuffer Ecb;
             [BurstDiscard]
             void Execute(Entity entity)
             {
                 Data.Value.Navmesh->RemoveConstraintMajor(entity);
-                Buffer.RemoveComponent<CleanUpObstacleComponent>(entity);
+                Ecb.RemoveComponent<CleanUpObstacleComponent>(entity);
             }
         }
 
@@ -353,13 +393,13 @@ namespace DotsNav.Navmesh.Systems
         partial struct InsertJob : IJobEntity
         {
             public NativeReference<JobData> Data;
-            public EntityCommandBuffer Buffer;
+            public EntityCommandBuffer Ecb;
             [BurstDiscard]
             void Execute(Entity entity, in NavmeshObstacleComponent obstacle, in DynamicBuffer<VertexElement> vertices, in LocalToWorld localToWorld)
             {
                 var navmesh = Data.Value.Navmesh;
                 var ltw = math.mul(Data.Value.PlaneLtwInv, localToWorld.Value);
-                Buffer.AddSharedComponent(entity, new CleanUpObstacleComponent { Plane = Data.Value.Plane });
+                Ecb.AddSharedComponent(entity, new CleanUpObstacleComponent { Plane = Data.Value.Plane });
 
                 if (Data.Value.Empty)
                 {
@@ -411,13 +451,13 @@ namespace DotsNav.Navmesh.Systems
         partial struct BlobJob : IJobEntity
         {
             public NativeReference<JobData> Data;
-            public EntityCommandBuffer Buffer;
+            public EntityCommandBuffer Ecb;
             [BurstDiscard]
             void Execute(in Entity entity, in VertexBlobComponent blob, in LocalToWorld localToWorld)
             {
                 var navmesh = Data.Value.Navmesh;
                 var ltw = math.mul(Data.Value.PlaneLtwInv, localToWorld.Value);
-                Buffer.AddSharedComponent(entity, new CleanUpObstacleComponent{Plane = Data.Value.Plane});
+                Ecb.AddSharedComponent(entity, new CleanUpObstacleComponent{Plane = Data.Value.Plane});
                 ref var vertices = ref blob.BlobRef.Value.Vertices;
 
                 if (Data.Value.Empty)
@@ -481,9 +521,9 @@ namespace DotsNav.Navmesh.Systems
                 var navmesh = Data.Value.Navmesh;
                 
                 if (Data.Value.Empty) {
-                    navmesh->GlobalRefine();
+                    // navmesh->GlobalRefine();
                 } else {
-                    navmesh->LocalRefinement();
+                    // navmesh->LocalRefinement();
                 }
 
                 UnityEngine.Debug.Log("OKURRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR");
@@ -493,6 +533,7 @@ namespace DotsNav.Navmesh.Systems
                     navmesh->InsertMajorInMinor(edge);
                 }
                 navmesh->AddedOrModifiedMajorEdges.Clear();
+
 
                 var destroyedTriangles = DestroyedTriangleBufferLookup[Data.Value.Plane];
                 destroyedTriangles.Clear();
@@ -508,7 +549,7 @@ namespace DotsNav.Navmesh.Systems
         partial struct InsertTerrainJob : IJobEntity
         {
             public NativeReference<JobData> Data;
-            public EntityCommandBuffer Buffer;
+            public EntityCommandBuffer Ecb;
 
             // Replace
         }
@@ -517,12 +558,12 @@ namespace DotsNav.Navmesh.Systems
         partial struct DestroyTerrainJob : IJobEntity
         {
             public NativeReference<JobData> Data;
-            public EntityCommandBuffer Buffer;
+            public EntityCommandBuffer Ecb;
             [BurstDiscard]
             void Execute(Entity entity)
             {
                 Data.Value.Navmesh->RemoveConstraintMinor(entity);
-                Buffer.RemoveComponent<CleanUpTerrainComponent>(entity);
+                Ecb.RemoveComponent<CleanUpTerrainComponent>(entity);
             }
         }
 

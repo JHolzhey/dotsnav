@@ -59,9 +59,31 @@ public static class CommonLib
         }
         return primitive;
     }
-    // public static GameObject CreateDebugUI(float number, float3 startPosition, float destroyTime = math.INFINITY) {
-    //     return GameObject.Find("WorldSpaceCanvas").GetComponent<WorldSpaceUIController>().DisplayDebugIcon(number, startPosition, destroyTime);
-    // }
+
+    public static void DebugTriangle(GameObject gameObject, Triangle tri, Color color)
+    {
+        gameObject.GetComponent<Renderer>().material.color = color;
+
+        if (!gameObject.TryGetComponent(out MeshFilter meshFilter)) {
+            // meshFilter = gameObject.AddComponent<MeshFilter>();
+            Debug.Assert(false, "Should exist");
+        }
+        Mesh mesh = meshFilter.mesh;
+        mesh.Clear();
+
+        Vector3[] vertices = new Vector3[3] { tri.p0, tri.p1, tri.p2 };
+        Vector3[] normals = new Vector3[3] { tri.Normal, tri.Normal, tri.Normal };
+
+        int[] triIndices = new int[3] { 0, 1, 2 };
+
+        mesh.vertices = vertices;
+        mesh.normals = normals;
+        mesh.triangles = triIndices;
+    }
+
+    public static GameObject CreateDebugUI(float number, float3 startPosition, float destroyTime = math.INFINITY) {
+        return GameObject.Find("WorldSpaceCanvas").GetComponent<WorldSpaceUIController>().DisplayDebugIcon(number, startPosition, destroyTime);
+    }
 
     // public static void CreateExactCapsule(float3 start, float3 end, float radius, Color color, float destroyTime = math.INFINITY) {
     //     CreatePrimitive(PrimitiveType.Sphere, start, new float3(radius*2f), color, default, destroyTime);

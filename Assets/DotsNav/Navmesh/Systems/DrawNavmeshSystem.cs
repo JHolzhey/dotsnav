@@ -3,6 +3,7 @@ using DotsNav.Navmesh.Data;
 using DotsNav.Systems;
 using Unity.Burst;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Entities.UniversalDelegates;
 using Unity.Jobs;
@@ -14,23 +15,39 @@ namespace DotsNav.Navmesh.Systems
 {
     //[BurstDiscard]
     [UpdateInGroup(typeof(DotsNavDrawingSystemGroup))]
-    partial struct DrawNavmeshSystem : ISystem
+    partial class DrawNavmeshSystem : SystemBase
     {
+        GameObject[] debugTris;
+
         [BurstDiscard]
-        public void OnCreate(ref SystemState state)
+        protected override void OnCreate()
+        {
+            debugTris = new GameObject[500];
+            for (int i = 0; i < debugTris.Length; i++) { debugTris[i] = CommonLib.CreatePrimitive(PrimitiveType.Quad, float3.zero, new float3(1f), default); }
+        }
+
+        [BurstDiscard]
+        protected override void OnDestroy()
         {
         }
 
         [BurstDiscard]
-        public void OnDestroy(ref SystemState state)
+        protected override void OnUpdate()
         {
-        }
+            NativeList<Pair<Triangle, Color>> outputTriangles = new NativeList<Pair<Triangle, Color>>(10, Allocator.TempJob);
 
-        [BurstDiscard]
-        public void OnUpdate(ref SystemState state)
-        {
-            new DrawNavmeshJob().Schedule();
-            DotsNavRenderer.Handle.Data = JobHandle.CombineDependencies(DotsNavRenderer.Handle.Data, state.Dependency);
+            new DrawNavmeshJob{ outputMinorTriangles = outputTriangles }.Schedule();
+            DotsNavRenderer.Handle.Data = JobHandle.CombineDependencies(DotsNavRenderer.Handle.Data, CheckedStateRef.Dependency);
+
+            CheckedStateRef.Dependency.Complete();
+            for (int i = 0; i < outputTriangles.Length; i++) {
+                debugTris[i].transform.position = float3.zero;
+                CommonLib.DebugTriangle(debugTris[i], outputTriangles[i].first, outputTriangles[i].second);
+            }
+            for (int i = outputTriangles.Length; i < 500; i++) {
+                debugTris[i].transform.position = new float3(1000f);
+            }
+            outputTriangles.Dispose();
         }
 
 
@@ -44,9 +61,20 @@ namespace DotsNav.Navmesh.Systems
             lines.Add(new Line(pos + new float2(0, -hor), pos + new float2(0, hor), color));
         }
 
+        public unsafe static void DrawEdgeTriangle(ref NativeList<Line> lines, Edge* edge, UnsafeList<NavmeshMaterialType> materialTypes, float size = .05f)
+        {
+            Triangle tri = edge->Get3DTriangle().RoughInset(0.1f);
+
+            lines.Add(new Line(tri.p0, tri.p1, materialTypes[edge->MaterialTypeIndex].color));
+            lines.Add(new Line(tri.p1, tri.p2, materialTypes[edge->LPrev->MaterialTypeIndex].color));
+            lines.Add(new Line(tri.p2, tri.p0, materialTypes[edge->LNext->MaterialTypeIndex].color));
+        }
+
         //[BurstCompile]
         unsafe partial struct DrawNavmeshJob : IJobEntity
         {
+            public NativeList<Pair<Triangle, Color>> outputMinorTriangles;
+
             [BurstDiscard]
             void Execute(NavmeshComponent navmesh, LocalToWorld ltw, NavmeshDrawComponent data)
             {
@@ -55,6 +83,7 @@ namespace DotsNav.Navmesh.Systems
 
                 var lines = new NativeList<Line>(navmesh.Navmesh->Vertices * 3, Allocator.Temp);
 
+                UnsafeHashSet<int> closedMinorTriangles = new UnsafeHashSet<int>(10, Allocator.Temp);
 
                 var enumeratorMinor = navmesh.Navmesh->GetEdgeEnumerator(false);
 
@@ -68,27 +97,44 @@ namespace DotsNav.Navmesh.Systems
 
                 int minorLefts = 0;
                 int minorRights = 0;
-                while (true && enumeratorMinor.MoveNext())
+                while (enumeratorMinor.MoveNext())
                 {
                     var edge = enumeratorMinor.Current;
 
                     Debug.Assert(!Edge.IsEdgeTypeMajor(edge->EdgeType), $"edge->EdgeType: {edge->EdgeType}");
+                    Debug.Assert(edge->TriangleCost == 1f || edge->TriangleCost == 1f * 0.5f, $"edge->TriangleCost: {edge->TriangleCost}");
 
-                    if (data.DrawMode == DrawMode.Constrained && !edge->Constrained)
+                    if (data.DrawMode == DrawMode.Constrained && !edge->IsConstrained)
                         continue;
 
-                    if (!Edge.EdgeColors.TryGetValue(edge->EdgeType, out Color c)) {
-                        c = Color.white;
-                    }
+                    Edge.EdgeColors.TryGetValue(edge->EdgeType, out Color c);
+
+
                     
                     var a = math.transform(ltw.Value, edge->Org->Point.ToXxY());
                     var b = math.transform(ltw.Value, edge->Dest->Point.ToXxY());
 
                     float3 tangent = MathLib.CalcTangentToNormal(math.normalizesafe(b - a));
-                    float3 leftOffset = 0.005f * tangent;
-
+                    float3 leftOffset = 0.005f * MathLib.CalcTangentToNormal(math.normalizesafe(b - a));
                     lines.Add(new Line(a + leftOffset, b + leftOffset, c));
 
+                    if (!(edge->MaterialTypeIndex == edge->LNext->MaterialTypeIndex && edge->LNext->MaterialTypeIndex == edge->LPrev->MaterialTypeIndex)) {
+                        Debug.Assert(false, $"Unequal tri material, edge = {edge->MaterialTypeIndex}, edge->LNext = {edge->LNext->MaterialTypeIndex}, edge->LPrev = {edge->LPrev->MaterialTypeIndex}");
+                        DrawEdgeTriangle(ref lines, edge, navmesh.Navmesh->MaterialTypes);
+                    }
+                    if (!(edge->Sym->MaterialTypeIndex == edge->Sym->LNext->MaterialTypeIndex && edge->Sym->LNext->MaterialTypeIndex == edge->Sym->LPrev->MaterialTypeIndex)) {
+                        Debug.Assert(false, $"Unequal tri material, edge->Sym = {edge->Sym->MaterialTypeIndex}, edge->Sym->LNext = {edge->Sym->LNext->MaterialTypeIndex}, edge->Sym->LPrev = {edge->Sym->LPrev->MaterialTypeIndex}");
+                        DrawEdgeTriangle(ref lines, edge->Sym, navmesh.Navmesh->MaterialTypes);
+                    }
+                    if (!closedMinorTriangles.Contains(edge->TriangleId)) {
+                        closedMinorTriangles.Add(edge->TriangleId);
+                        outputMinorTriangles.Add(new Pair<Triangle, Color>(edge->Get3DTriangle(), navmesh.Navmesh->MaterialTypes[edge->MaterialTypeIndex].color));
+                    } else if (!closedMinorTriangles.Contains(edge->Sym->TriangleId)) {
+                        closedMinorTriangles.Add(edge->Sym->TriangleId);
+                        outputMinorTriangles.Add(new Pair<Triangle, Color>(edge->Sym->Get3DTriangle(), navmesh.Navmesh->MaterialTypes[edge->Sym->MaterialTypeIndex].color));
+                    }
+
+                    // Asserting Major Edges:
                     if (edge->EdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)) {
                         float3 minorMidpoint = MathLib.Midpoint(a + leftOffset, b + leftOffset);
 
@@ -109,13 +155,13 @@ namespace DotsNav.Navmesh.Systems
                     }
 
                     if (false) {
-                        if (edge->DebugNonCalcClearanceLeft != -1) {
+                        if (edge->DebugRawClearanceLeft != -1) {
                             minorLefts++;
-                            Debug.Log($"Major edge->DebugNonCalcClearanceLeft: {edge->DebugNonCalcClearanceLeft}");
+                            Debug.Log($"Major edge->DebugNonCalcClearanceLeft: {edge->DebugRawClearanceLeft}");
                         }
-                        if (edge->DebugNonCalcClearanceRight != -1) {
+                        if (edge->DebugRawClearanceRight != -1) {
                             minorRights++;
-                            Debug.Log($"Minor edge->DebugNonCalcClearanceRight: {edge->DebugNonCalcClearanceRight}");
+                            Debug.Log($"Minor edge->DebugNonCalcClearanceRight: {edge->DebugRawClearanceRight}");
                         }
                     }
                 }
@@ -144,12 +190,10 @@ namespace DotsNav.Navmesh.Systems
 
                     Debug.Assert(Edge.IsEdgeTypeMajor(edge->EdgeType), $"edge->EdgeType: {edge->EdgeType}");
 
-                    if (data.DrawMode == DrawMode.Constrained && !edge->Constrained)
+                    if (data.DrawMode == DrawMode.Constrained && !edge->IsConstrained)
                         continue;
 
-                    if (!Edge.EdgeColors.TryGetValue(edge->EdgeType, out Color c)) {
-                        c = Color.gray;
-                    }
+                    Edge.EdgeColors.TryGetValue(edge->EdgeType, out Color c);
 
                     // if (edge->Constrained) { c = data.ConstrainedColor; c.a += 30; } else { c = data.UnconstrainedColor; }
                         
@@ -159,13 +203,13 @@ namespace DotsNav.Navmesh.Systems
                     lines.Add(new Line(a, b, c));
 
                     if (false) {
-                        if (edge->DebugNonCalcClearanceLeft != -1) {
+                        if (edge->DebugRawClearanceLeft != -1) {
                             majorLefts++;
-                            Debug.Log($"Major edge->DebugNonCalcClearanceLeft: {edge->DebugNonCalcClearanceLeft}");
+                            Debug.Log($"Major edge->DebugNonCalcClearanceLeft: {edge->DebugRawClearanceLeft}");
                         }
-                        if (edge->DebugNonCalcClearanceRight != -1) {
+                        if (edge->DebugRawClearanceRight != -1) {
                             majorRights++;
-                            Debug.Log($"Major edge->DebugNonCalcClearanceRight: {edge->DebugNonCalcClearanceRight}");
+                            Debug.Log($"Major edge->DebugNonCalcClearanceRight: {edge->DebugRawClearanceRight}");
                         }
                     }
                 }
