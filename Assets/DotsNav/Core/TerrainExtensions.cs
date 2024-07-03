@@ -45,32 +45,27 @@ public static class TerrainExtensions
         return new float2(normalizedCoords.x, normalizedCoords.z);
     }
 
-    public static void SimplifyTerrainMesh(this Terrain terrain, float maxError, out UnsafeList<float3> points, out UnsafeList<int3> triangles) {
+    public static Heightmap GetHeightMapData(this Terrain terrain, Allocator allocator) {
         TerrainData terrainData = terrain.terrainData;
-        int heightmapResolution = 80; // terrainData.heightmapResolution;
+        int heightmapResolution = terrainData.heightmapResolution;
         float[,] heights = terrainData.GetHeights(0, 0, heightmapResolution, heightmapResolution);
-        float3 heightmapScale = terrainData.heightmapScale;
-        float3 terrainPositionOffset = terrain.GetPosition();
 
-        Native2DArray<float> heightmapData = new Native2DArray<float>(heightmapResolution, heightmapResolution, Allocator.Temp);
+        Native2DArray<float> heightmapData = new Native2DArray<float>(heightmapResolution, heightmapResolution, allocator);
 
         for (int x = 0; x < heightmapResolution; x++) {
             for (int y = 0; y < heightmapResolution; y++) {
                 heightmapData[x, y] = heights[y, x];
             }
         }
+        return new Heightmap(heightmapData.LengthX, heightmapData.LengthY, heightmapData.flatArray, terrain.terrainData.heightmapScale, terrain.GetPosition());
+    }
 
-        Heightmap heightmap = new Heightmap(heightmapResolution, heightmapResolution, heightmapData.flatArray);
-
-        Triangulator triangulator = new Triangulator(heightmap);
+    public static void SimplifyTerrainMesh(this Terrain terrain, float maxError, float3 scaleFactor, out UnsafeList<float3> points, out UnsafeList<int3> triangles) {
+        Triangulator triangulator = new Triangulator(terrain.GetHeightMapData(Allocator.Temp));
         triangulator.Run(maxError, int.MaxValue, int.MaxValue);
 
-        points = triangulator.Points();
+        points = triangulator.Points(scaleFactor);
         triangles = triangulator.Triangles();
-
-        for (int i = 0; i < points.Length; i++) {
-            points[i] = points[i] * heightmapScale + terrainPositionOffset;
-        }
     }
 
 

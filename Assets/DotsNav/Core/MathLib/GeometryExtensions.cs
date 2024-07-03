@@ -20,6 +20,11 @@ public static class GeometryExtensions
         Debug.Assert(math.all(value < ValidDistanceFromOrigin) && math.all(value > -ValidDistanceFromOrigin), $"float3 is too large: {value}");
         return math.all(!math.isnan(value)) && math.all(value < ValidDistanceFromOrigin) && math.all(value > -ValidDistanceFromOrigin);
     }
+    public static bool IsPhysicallyValid(this float2 value) {
+        Debug.Assert(math.all(!math.isnan(value)), $"float3 is NaN: {value}");
+        Debug.Assert(math.all(value < ValidDistanceFromOrigin) && math.all(value > -ValidDistanceFromOrigin), $"float3 is too large: {value}");
+        return math.all(!math.isnan(value)) && math.all(value < ValidDistanceFromOrigin) && math.all(value > -ValidDistanceFromOrigin);
+    }
     public static bool IsPhysicallyValid(this float value) {
         Debug.Assert(!math.isnan(value), $"float is NaN: {value}");
         Debug.Assert(value < ValidDistanceFromOrigin && value > -ValidDistanceFromOrigin, $"float is too large: {value}");

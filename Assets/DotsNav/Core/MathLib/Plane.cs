@@ -53,6 +53,7 @@ public struct Plane : IComponentData, IGeometry
     public float3 ProjPoint(float3 point) => MathLib.ProjPointToPlane(point, normal, distance);
 
     public float SampleElevation(float3 positionXZ) => MathLib.SamplePlaneElevation(positionXZ, normal, distance);
+    public float SampleElevation(float2 position) => MathLib.SamplePlaneElevation(position.XOY(), normal, distance);
 
     public bool IsValid() => normal.IsPhysicallyValid() && distance.IsPhysicallyValid();
 }

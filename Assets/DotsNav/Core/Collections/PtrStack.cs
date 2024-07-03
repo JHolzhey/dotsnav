@@ -8,7 +8,7 @@ namespace DotsNav.Collections
     readonly unsafe struct PtrStack<T> where T : unmanaged
     {
         readonly List<IntPtr> _data;
-        public int Count => _data.Length;
+        public int Length => _data.Length;
 
         public PtrStack(int initialCapacity, Allocator allocator)
         {
@@ -23,7 +23,7 @@ namespace DotsNav.Collections
         {
             get
             {
-                Assert.IsTrue(i >= 0 && i < Count , "index out of range");
+                Assert.IsTrue(i >= 0 && i < Length , "index out of range");
                 return (T*) _data[i];
             }
         }
@@ -45,7 +45,7 @@ namespace DotsNav.Collections
         {
             get
             {
-                var result = new IntPtr[_data.Count];
+                var result = new IntPtr[_data.Length];
                 for (var i = 0; i < result.Length; ++i)
                     result[i] = (IntPtr) _data[i];
                 return result;

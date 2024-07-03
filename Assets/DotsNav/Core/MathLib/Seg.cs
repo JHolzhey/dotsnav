@@ -32,6 +32,8 @@ public struct Seg : IComponentData, IGeometry
 
     public readonly float SlopeAngle => MathLib.VectorSlopeAngle(Vector);
 
+    public readonly Plane UpPlane => new Plane(Up, start); // TODO: Pretty sure this doesn't work
+
     public Seg(float3 start, float3 end) {
         this.start = start;
         this.end = end;
@@ -51,7 +53,16 @@ public struct Seg : IComponentData, IGeometry
     public float4x4 CalcLocalMatrix() => MathLib.CalcLocalMatrix(Direction, start);
 
 
-
+    public float3 PointGivenXZ(float2 xz) { // TODO: Make Line struct and make this a method
+        if (!MathLib.IsPointOnLineGivenX(start, Direction, xz.x, out float _, out float3 pointOnLine)) {
+            Debug.Assert(MathLib.IsEpsEqual(Direction.x, 0f, 0.001f));
+            if (!MathLib.IsPointOnLineGivenZ(start, Direction, xz.y, out _, out pointOnLine)) {
+                Debug.Assert(IsVertical);
+                pointOnLine = start; // If this then Seg is vertical
+            }
+        }
+        return pointOnLine;
+    }
 
     public void ExtendForward(float amount) => Update(start, end + Direction*amount);
     public void ExtendBackward(float amount) => Update(start - Direction*amount, end);

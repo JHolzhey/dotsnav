@@ -1,4 +1,4 @@
-using System.Diagnostics;
+using System;
 using DotsNav.Data;
 using DotsNav.Hybrid;
 using DotsNav.Navmesh.Data;
@@ -27,6 +27,7 @@ namespace DotsNav.Navmesh.Systems
         EntityQuery _blobBulkQuery;
 
         EntityQuery _insertTerrainQuery;
+        EntityQuery _insertTerrainBulkQuery;
         EntityQuery _destroyTerrainQuery;
         
         ComponentLookup<NavmeshComponent> _navmeshLookup;
@@ -54,8 +55,8 @@ namespace DotsNav.Navmesh.Systems
                     .WithAll<VertexElement>()
                     .WithAll<NavmeshObstacleComponent>()
                     .WithAll<LocalToWorld>()
-                    .WithNone<CleanUpObstacleComponent>()
                     .WithNone<VertexAmountElement>()
+                    .WithNone<CleanUpObstacleComponent>()
                     .Build(ref state);
 
             _insertBulkQuery =
@@ -86,6 +87,11 @@ namespace DotsNav.Navmesh.Systems
                     .WithNone<CleanUpObstacleComponent>()
                     .Build(ref state);
                 
+            _destroyTerrainQuery =
+                new EntityQueryBuilder(Allocator.Temp)
+                    .WithAll<CleanUpTerrainComponent>()
+                    .WithNone<NavmeshTerrainComponent>()
+                    .Build(ref state);
 
             _insertTerrainQuery =
                 new EntityQueryBuilder(Allocator.Temp)
@@ -93,16 +99,19 @@ namespace DotsNav.Navmesh.Systems
                     .WithAll<VertexElement>()
                     .WithAll<NavmeshTerrainComponent>()
                     .WithAll<LocalToWorld>()
-                    .WithNone<CleanUpTerrainComponent>()
                     .WithNone<VertexAmountElement>()
+                    .WithNone<CleanUpTerrainComponent>()
                     .Build(ref state);
 
-            _destroyTerrainQuery =
+            _insertTerrainBulkQuery =
                 new EntityQueryBuilder(Allocator.Temp)
-                    .WithAll<CleanUpTerrainComponent>()
-                    .WithNone<NavmeshTerrainComponent>()
+                    .WithAll<PlaneComponent>()
+                    .WithAll<VertexElement>()
+                    .WithAll<VertexAmountElement>()
+                    .WithAll<NavmeshTerrainComponent>()
+                    .WithAll<LocalToWorld>()
+                    .WithNone<CleanUpTerrainComponent>()
                     .Build(ref state);
-
             
             _navmeshLookup = state.GetComponentLookup<NavmeshComponent>(true);
             _localToWorldLookup = state.GetComponentLookup<LocalToWorld>(true);
@@ -148,11 +157,13 @@ namespace DotsNav.Navmesh.Systems
                     destroyTerrainIsEmpty = _destroyTerrainQuery.IsEmpty;
                 }
 
-                var insertIsEmpty  = true;
+                var insertIsEmpty = true;
+                var insertBulkIsEmpty = true;
+                var blobIsEmpty = true;
+                var blobBulkIsEmpty = true;
+
                 var insertTerrainIsEmpty  = true;
-                var insertBulkIsEmpty  = true;
-                var blobIsEmpty  = true;
-                var blobBulkIsEmpty  = true;
+                var insertTerrainBulkIsEmpty  = true;
                 
                 exists = false;
                 foreach (var plane1 in planes)
@@ -167,6 +178,7 @@ namespace DotsNav.Navmesh.Systems
                 if (exists)
                 {
                     var plane = new PlaneComponent { Entity = planeEntity };
+
                     _insertQuery.SetSharedComponentFilter(plane);
                     insertIsEmpty = _insertQuery.IsEmpty;
                     _insertBulkQuery.SetSharedComponentFilter(plane);
@@ -178,12 +190,15 @@ namespace DotsNav.Navmesh.Systems
 
                     _insertTerrainQuery.SetSharedComponentFilter(plane);
                     insertTerrainIsEmpty = _insertTerrainQuery.IsEmpty;
+                    _insertTerrainBulkQuery.SetSharedComponentFilter(plane);
+                    insertTerrainBulkIsEmpty = _insertTerrainBulkQuery.IsEmpty;
                 }
 
-                if (destroyIsEmpty && insertIsEmpty && insertBulkIsEmpty && blobIsEmpty && blobBulkIsEmpty && insertTerrainIsEmpty && destroyTerrainIsEmpty)
+                if (destroyIsEmpty && insertIsEmpty && insertBulkIsEmpty && blobIsEmpty && blobBulkIsEmpty && destroyTerrainIsEmpty && insertTerrainIsEmpty && insertTerrainBulkIsEmpty)
                     continue;
 
                 var data = new NativeReference<JobData>(Allocator.TempJob);
+
                 /* var dependency =  */new PreJob
                 {
                     Plane = planeEntity,
@@ -224,20 +239,21 @@ namespace DotsNav.Navmesh.Systems
 
                             if (Data.Value.Empty)
                             {
-                                navmesh->InsertMajor((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
+                                navmesh->InsertMajor(new Span<PlanePoint>(vertices.GetUnsafeReadOnlyPtr(), vertices.Length), entity, ltw);
                             }
                             else
                             {
                                 navmesh->C.Clear();
-                                navmesh->InsertMajor((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
+                                navmesh->InsertMajor(new Span<PlanePoint>(vertices.GetUnsafeReadOnlyPtr(), vertices.Length), entity, ltw);
                                 navmesh->SearchDisturbances();
                             }
                         // }
                     }
                 }
 
-                if (!insertBulkIsEmpty) 
-                    /* dependency =  */new InsertBulkJob { Data = data }.Run(); // .Schedule(_insertBulkQuery, dependency);
+                if (!insertBulkIsEmpty)  {
+                    /* dependency =  */new InsertBulkJob { Data = data }.Run(_insertBulkQuery); // .Schedule(_insertBulkQuery, dependency);
+                }
 
                 if (!blobIsEmpty)
                 {
@@ -248,8 +264,9 @@ namespace DotsNav.Navmesh.Systems
                     }.Run(_blobQuery); // .Schedule(_blobQuery, dependency);
                 }
                 
-                if (!blobBulkIsEmpty) 
-                    /* dependency =  */new BlobBulkJob { Data = data }.Run(); // .Schedule(_blobBulkQuery, dependency);
+                if (!blobBulkIsEmpty) {
+                    /* dependency =  */new BlobBulkJob { Data = data }.Run(_blobBulkQuery); // .Schedule(_blobBulkQuery, dependency);
+                }
 
                 // /* dependency =  */new PostJob
                 // {
@@ -258,37 +275,48 @@ namespace DotsNav.Navmesh.Systems
                 // }.Run(); // .Schedule(dependency);
 
 
-                    // PostJob, DELETE:
-                    // public void Execute()
-                    {
-                        var navmesh = data.Value.Navmesh;
-                        
-                        if (data.Value.Empty) {
-                            // navmesh->GlobalRefine();
-                        } else {
-                            // navmesh->LocalRefinement();
-                        }
-
-                        UnityEngine.Debug.Log($"InsetMajorInMinor; numMajorInMinorInsertions: {numMajorInMinorInsertions}, AddedOrModifiedMajorEdges.Length: {navmesh->AddedOrModifiedMajorEdges.Length}, OKUUUURRRRRRRR");
-                        foreach (IntPtr e in navmesh->AddedOrModifiedMajorEdges) {
-                            Edge* edge = (Edge*)e;
-                            // if (numMajorInMinorInsertions < 8) {
-                                navmesh->InsertMajorInMinor(edge);
-                            // }
-                            numMajorInMinorInsertions++;
-                        }
-                        navmesh->AddedOrModifiedMajorEdges.Clear();
-
-
-                        var destroyedTriangles = _destroyedTriangleBufferLookup[data.Value.Plane];
-                        destroyedTriangles.Clear();
-                        var tris = navmesh->DestroyedTriangles.GetEnumerator();
-                        while (tris.MoveNext()) {
-                            destroyedTriangles.Add(tris.Current);
-                        }
-                        destroyedTriangles.Reinterpret<int>().AsNativeArray().Sort();
+                // PostJob, DELETE:
+                // public void Execute()
+                {
+                    var navmesh = data.Value.Navmesh;
+                    
+                    if (data.Value.Empty) {
+                        // navmesh->GlobalRefine();
+                    } else {
+                        // navmesh->LocalRefinement();
                     }
 
+                    UnityEngine.Debug.Log($"InsetMajorInMinor; numMajorInMinorInsertions: {numMajorInMinorInsertions}, AddedOrModifiedMajorEdges.Length: {navmesh->AddedOrModifiedMajorEdges.Length}, OKUUUURRRRRRRRRRRRRRRRRRR");
+                    foreach (IntPtr edge in navmesh->AddedOrModifiedMajorEdges) {
+                        navmesh->InsertMajorInMinor((Edge*)edge);
+                        numMajorInMinorInsertions++;
+                    }
+                    navmesh->AddedOrModifiedMajorEdges.Clear();
+
+
+                    var destroyedTriangles = _destroyedTriangleBufferLookup[data.Value.Plane];
+                    destroyedTriangles.Clear();
+                    var tris = navmesh->DestroyedTriangles.GetEnumerator();
+                    while (tris.MoveNext()) {
+                        destroyedTriangles.Add(tris.Current);
+                    }
+                    destroyedTriangles.Reinterpret<int>().AsNativeArray().Sort();
+                }
+
+
+                if (!destroyTerrainIsEmpty)
+                { 
+                    // /* dependency =  */new DestroyTerrainJob
+                    // {
+                    //     Data = data,
+                    //     Ecb = ecb
+                    // }.Run(_destroyTerrainQuery); // .Schedule(_destroyTerrainQuery, dependency);
+
+                    foreach (var (_, entity) in SystemAPI.Query<CleanUpTerrainComponent>().WithNone<NavmeshTerrainComponent>().WithEntityAccess()) {
+                        data.Value.Navmesh->RemoveConstraintMinor(entity);
+                        ecb.RemoveComponent<CleanUpTerrainComponent>(entity);
+                    }
+                }
 
 
                 if (!insertTerrainIsEmpty)
@@ -308,30 +336,20 @@ namespace DotsNav.Navmesh.Systems
 
                             if (Data.Value.Empty)
                             {
-                                navmesh->InsertMinor((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
+                                navmesh->InsertMinor(new Span<PlanePoint>(vertices.GetUnsafeReadOnlyPtr(), vertices.Length), entity, ltw);
                             }
                             else
                             {
-                                navmesh->C.Clear();
-                                navmesh->InsertMinorCost((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, 3, ltw);
-                                // navmesh->SearchDisturbances(); // Minor doesn't have Disturbances
+                                // navmesh->C.Clear(); // Minor graph doesn't use C
+                                navmesh->InsertMinorCost(new Span<PlanePoint>(vertices.GetUnsafeReadOnlyPtr(), vertices.Length), entity, 3, ltw);
+                                // navmesh->SearchDisturbances(); // Minor graph doesn't have Disturbances
                             }
                         // }
                     }
                 }
 
-                if (!destroyTerrainIsEmpty)
-                { 
-                    // /* dependency =  */new DestroyTerrainJob
-                    // {
-                    //     Data = data,
-                    //     Ecb = ecb
-                    // }.Run(_destroyTerrainQuery); // .Schedule(_destroyQuery, dependency);
-
-                    foreach (var (_, entity) in SystemAPI.Query<CleanUpTerrainComponent>().WithNone<NavmeshTerrainComponent>().WithEntityAccess()) {
-                        data.Value.Navmesh->RemoveConstraintMinor(entity);
-                        ecb.RemoveComponent<CleanUpTerrainComponent>(entity);
-                    }
+                if (!insertTerrainBulkIsEmpty) {
+                    /* dependency =  */new InsertTerrainBulkJob { Data = data }.Run(_insertTerrainBulkQuery); // .Schedule(_insertBulkQuery, dependency);
                 }
                 
                 //dependencies.Add(dependency);
@@ -401,14 +419,11 @@ namespace DotsNav.Navmesh.Systems
                 var ltw = math.mul(Data.Value.PlaneLtwInv, localToWorld.Value);
                 Ecb.AddSharedComponent(entity, new CleanUpObstacleComponent { Plane = Data.Value.Plane });
 
-                if (Data.Value.Empty)
-                {
-                    navmesh->InsertMajor((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
-                }
-                else
-                {
+                if (Data.Value.Empty) {
+                    navmesh->InsertMajor(new Span<PlanePoint>(vertices.GetUnsafeReadOnlyPtr(), vertices.Length), entity, ltw);
+                } else {
                     navmesh->C.Clear();
-                    navmesh->InsertMajor((float2*)vertices.GetUnsafeReadOnlyPtr(), 0, vertices.Length, entity, ltw);
+                    navmesh->InsertMajor(new Span<PlanePoint>(vertices.GetUnsafeReadOnlyPtr(), vertices.Length), entity, ltw);
                     navmesh->SearchDisturbances();
                 }
             }
@@ -422,24 +437,19 @@ namespace DotsNav.Navmesh.Systems
             void Execute(in DynamicBuffer<VertexElement> vertices, in DynamicBuffer<VertexAmountElement> amounts, in LocalToWorld localToWorld)
             {
                 var navmesh = Data.Value.Navmesh;
-                var ptr = (float2*)vertices.GetUnsafeReadOnlyPtr();
+                var ptr = (PlanePoint*)vertices.GetUnsafeReadOnlyPtr();
                 var ltw = math.mul(Data.Value.PlaneLtwInv, localToWorld.Value);
                 var start = 0;
                 
-                if (Data.Value.Empty)
-                {
-                    foreach (var amount in amounts)
-                    {
-                        navmesh->InsertMajor(ptr, start, amount, Entity.Null, ltw);
+                if (Data.Value.Empty) {
+                    foreach (var amount in amounts) {
+                        navmesh->InsertMajor(new Span<PlanePoint>(ptr + start, amount), Entity.Null, ltw);
                         start += amount;
                     }
-                }
-                else
-                {
-                    foreach (var amount in amounts)
-                    {
+                } else {
+                    foreach (var amount in amounts) {
                         navmesh->C.Clear();
-                        navmesh->InsertMajor(ptr, start, amount, Entity.Null, ltw);
+                        navmesh->InsertMajor(new Span<PlanePoint>(ptr + start, amount), Entity.Null, ltw);
                         navmesh->SearchDisturbances();
                         start += amount;
                     }
@@ -460,14 +470,11 @@ namespace DotsNav.Navmesh.Systems
                 Ecb.AddSharedComponent(entity, new CleanUpObstacleComponent{Plane = Data.Value.Plane});
                 ref var vertices = ref blob.BlobRef.Value.Vertices;
 
-                if (Data.Value.Empty)
-                {
-                    navmesh->InsertMajor((float2*)vertices.GetUnsafePtr(), 0, vertices.Length, entity, ltw);
-                }
-                else
-                {
+                if (Data.Value.Empty) {
+                    navmesh->InsertMajor(new Span<PlanePoint>(vertices.GetUnsafePtr(), vertices.Length), entity, ltw);
+                } else {
                     navmesh->C.Clear();
-                    navmesh->InsertMajor((float2*)vertices.GetUnsafePtr(), 0, vertices.Length, entity, ltw);
+                    navmesh->InsertMajor(new Span<PlanePoint>(vertices.GetUnsafePtr(), vertices.Length), entity, ltw);
                     navmesh->SearchDisturbances();
                 }
             }
@@ -481,27 +488,22 @@ namespace DotsNav.Navmesh.Systems
             void Execute(in ObstacleBlobComponent blob, in LocalToWorld localToWorld)
             {
                 var navmesh = Data.Value.Navmesh;
-                var vertices = (float2*)blob.BlobRef.Value.Vertices.GetUnsafePtr();
+                var vertices = (PlanePoint*)blob.BlobRef.Value.Vertices.GetUnsafePtr();
                 ref var a = ref blob.BlobRef.Value.Amounts;
                 var ltw = math.mul(Data.Value.PlaneLtwInv, localToWorld.Value);
                 var start = 0;
                 
-                if (Data.Value.Empty)
-                {
-                    for (var i = 0; i < a.Length; i++)
-                    {
+                if (Data.Value.Empty) {
+                    for (var i = 0; i < a.Length; i++) {
                         var amount = a[i];
-                        navmesh->InsertMajor(vertices, start, amount, Entity.Null, ltw);
+                        navmesh->InsertMajor(new Span<PlanePoint>(vertices + start, amount), Entity.Null, ltw);
                         start += amount;
                     }
-                }
-                else
-                {
-                    for (var i = 0; i < a.Length; i++)
-                    {
+                } else {
+                    for (var i = 0; i < a.Length; i++) {
                         var amount = a[i];
                         navmesh->C.Clear();
-                        navmesh->InsertMajor(vertices, start, amount, Entity.Null, ltw);
+                        navmesh->InsertMajor(new Span<PlanePoint>(vertices + start, amount), Entity.Null, ltw);
                         navmesh->SearchDisturbances();
                         start += amount;
                     }
@@ -510,7 +512,7 @@ namespace DotsNav.Navmesh.Systems
         }
 
         // [BurstDiscard]
-        struct PostJob : IJob
+        struct PostJob : IJob // TODO: 
         {
             public NativeReference<JobData> Data;
             [NativeDisableContainerSafetyRestriction]
@@ -527,10 +529,8 @@ namespace DotsNav.Navmesh.Systems
                 }
 
                 UnityEngine.Debug.Log("OKURRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR");
-                foreach (IntPtr e in navmesh->AddedOrModifiedMajorEdges) {
-                    Edge* edge = (Edge*)e;
-
-                    navmesh->InsertMajorInMinor(edge);
+                foreach (IntPtr edge in navmesh->AddedOrModifiedMajorEdges) {
+                    navmesh->InsertMajorInMinor((Edge*)edge);
                 }
                 navmesh->AddedOrModifiedMajorEdges.Clear();
 
@@ -546,15 +546,6 @@ namespace DotsNav.Navmesh.Systems
         }
 
         // [BurstDiscard]
-        partial struct InsertTerrainJob : IJobEntity
-        {
-            public NativeReference<JobData> Data;
-            public EntityCommandBuffer Ecb;
-
-            // Replace
-        }
-
-        // [BurstDiscard]
         partial struct DestroyTerrainJob : IJobEntity
         {
             public NativeReference<JobData> Data;
@@ -564,6 +555,43 @@ namespace DotsNav.Navmesh.Systems
             {
                 Data.Value.Navmesh->RemoveConstraintMinor(entity);
                 Ecb.RemoveComponent<CleanUpTerrainComponent>(entity);
+            }
+        }
+
+        // [BurstDiscard]
+        partial struct InsertTerrainJob : IJobEntity
+        {
+            public NativeReference<JobData> Data;
+            public EntityCommandBuffer Ecb;
+
+            // Replace
+        }
+
+        // [BurstDiscard]
+        partial struct InsertTerrainBulkJob : IJobEntity
+        {
+            public NativeReference<JobData> Data;
+            [BurstDiscard]
+            void Execute(in DynamicBuffer<VertexElement> vertices, in DynamicBuffer<VertexAmountElement> amounts, in LocalToWorld localToWorld)
+            {
+                var navmesh = Data.Value.Navmesh;
+                var ptr = (PlanePoint*)vertices.GetUnsafeReadOnlyPtr();
+                var ltw = math.mul(Data.Value.PlaneLtwInv, localToWorld.Value);
+                var start = 0;
+                
+                if (Data.Value.Empty) {
+                    foreach (var amount in amounts) {
+                        navmesh->InsertMinor(new Span<PlanePoint>(ptr + start, amount), Entity.Null, ltw);
+                        start += amount;
+                    }
+                } else {
+                    foreach (var amount in amounts) {
+                        navmesh->C.Clear();
+                        navmesh->InsertMinor(new Span<PlanePoint>(ptr + start, amount), Entity.Null, ltw);
+                        navmesh->SearchDisturbances();
+                        start += amount;
+                    }
+                }
             }
         }
 

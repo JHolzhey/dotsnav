@@ -7,6 +7,8 @@ namespace DotsNav.Drawing
     {
         None,
         Constrained,
-        Both
+        Both,
+        ConstrainedNoTerrain,
+        BothNoTerrain,
     }
 }

@@ -6,11 +6,15 @@ public unsafe struct Heightmap {
     int m_Width;
     int m_LengthY;
     NativeArray<float> m_Data;
+    float3 m_scale;
+    float3 m_offset;
 
-    public Heightmap(int width, int lengthY, NativeArray<float> data) {
+    public Heightmap(int width, int lengthY, NativeArray<float> data, float3 scale, float3 offset) {
         m_Width = width;
         m_LengthY = lengthY;
         m_Data = data;
+        m_scale = scale;
+        m_offset = offset;
     }
 
     public int Width() {
@@ -27,6 +31,10 @@ public unsafe struct Heightmap {
 
     public float At(int2 p) {
         return m_Data[p.y * m_Width + p.x];
+    }
+
+    public float3 ToWorld(int2 p) {
+        return new float3(p.x, At(p.x, p.y), p.y) * m_scale + m_offset;
     }
 
     public void AutoLevel() {
@@ -55,7 +63,7 @@ public unsafe struct Heightmap {
             m_Data[i] = math.pow(m_Data[i], gamma);
         }
     }
-    
+
     // public void GaussianBlur(int r) {
     //     m_Data = ::GaussianBlur(m_Data, m_Width, m_Height, r);
     // }

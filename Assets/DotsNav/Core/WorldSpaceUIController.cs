@@ -16,7 +16,7 @@ public class WorldSpaceUIController : MonoBehaviour
 
     public GameObject DisplayDebugIcon(float number, float3 startPosition, float destroyTime = math.INFINITY)
     {
-        var directionToCamera = (Vector3)startPosition - _mainCameraTransform.position;
+        var directionToCamera = (Vector3)startPosition - new Vector3(0,100000000,0); //_mainCameraTransform.position;
         var rotationToCamera = Quaternion.LookRotation(directionToCamera, Vector3.up);
         var newIcon = Instantiate(_iconPrefab, startPosition, rotationToCamera, transform);
         var newIconText = newIcon.GetComponent<TextMeshProUGUI>();

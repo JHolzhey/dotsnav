@@ -23,7 +23,7 @@ namespace DotsNav.Collections
 
         public T* GetElementPointer(T value = default)
         {
-            if (_available.Count == 0)
+            if (_available.Length == 0)
                 AddBlock();
             var ptr = _available.Pop();
             *ptr = value;
@@ -53,7 +53,7 @@ namespace DotsNav.Collections
             _available.Dispose();
         }
 
-        public int Count => Capacity - _available.Count;
+        public int Count => Capacity - _available.Length;
 
         public void Clear()
         {

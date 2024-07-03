@@ -48,7 +48,7 @@ namespace DotsNav.Navmesh
         // struct MajorOrMinor : ClosestVertexFinder {
         // }
 
-        public Vertex* FindClosest(float2 p, Vertex.Type vertexType = Vertex.Type.Major, float rangeSq = float.MaxValue)
+        public Vertex* FindClosest(float2 p, Vertex.Type vertexType, float rangeSq = float.MaxValue)
         {
             var node = _root;
             while (!node->IsLeaf)
@@ -85,6 +85,7 @@ namespace DotsNav.Navmesh
                 }
             }
 
+            // TODO: Wrap in condtional
             if (closest != null) {
                 UnityEngine.Debug.Assert(closest->VertexType.HasAnyFlagsB(vertexType), $"vertexType: {vertexType}, closest->VertexType: {closest->VertexType}");
                 UnityEngine.Debug.Assert((vertexType == Vertex.Type.Minor && closest->GetEdge(false) != null)

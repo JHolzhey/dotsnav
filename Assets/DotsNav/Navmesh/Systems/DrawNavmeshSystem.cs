@@ -17,41 +17,46 @@ namespace DotsNav.Navmesh.Systems
     [UpdateInGroup(typeof(DotsNavDrawingSystemGroup))]
     partial class DrawNavmeshSystem : SystemBase
     {
+        int numDebugTris = 5000;
         GameObject[] debugTris;
+        NativeList<Pair<Triangle, Color>> outputTriangles;
+        NativeHashSet<int> closedMinorTriangles;
 
         [BurstDiscard]
         protected override void OnCreate()
         {
-            debugTris = new GameObject[500];
+            outputTriangles = new NativeList<Pair<Triangle, Color>>(10, Allocator.Persistent);
+            closedMinorTriangles = new NativeHashSet<int>(10, Allocator.Persistent);
+
+            debugTris = new GameObject[numDebugTris];
             for (int i = 0; i < debugTris.Length; i++) { debugTris[i] = CommonLib.CreatePrimitive(PrimitiveType.Quad, float3.zero, new float3(1f), default); }
         }
 
         [BurstDiscard]
-        protected override void OnDestroy()
-        {
-        }
+        protected override void OnDestroy() {}
 
         [BurstDiscard]
         protected override void OnUpdate()
         {
-            NativeList<Pair<Triangle, Color>> outputTriangles = new NativeList<Pair<Triangle, Color>>(10, Allocator.TempJob);
-
-            new DrawNavmeshJob{ outputMinorTriangles = outputTriangles }.Schedule();
-            DotsNavRenderer.Handle.Data = JobHandle.CombineDependencies(DotsNavRenderer.Handle.Data, CheckedStateRef.Dependency);
-
             CheckedStateRef.Dependency.Complete();
+
             for (int i = 0; i < outputTriangles.Length; i++) {
                 debugTris[i].transform.position = float3.zero;
                 CommonLib.DebugTriangle(debugTris[i], outputTriangles[i].first, outputTriangles[i].second);
             }
-            for (int i = outputTriangles.Length; i < 500; i++) {
+            for (int i = outputTriangles.Length; i < numDebugTris; i++) {
                 debugTris[i].transform.position = new float3(1000f);
             }
-            outputTriangles.Dispose();
+
+            outputTriangles.Clear();
+            closedMinorTriangles.Clear();
+
+            new DrawNavmeshJob{ outputMinorTriangles = outputTriangles, closedMinorTriangles = closedMinorTriangles }.Schedule();
+            DotsNavRenderer.Handle.Data = JobHandle.CombineDependencies(DotsNavRenderer.Handle.Data, CheckedStateRef.Dependency);
         }
 
 
-        public static void DrawPoint(ref NativeList<Line> lines, float2 pos, Color color, float size = .05f)
+        public static void DrawPoint(ref NativeList<Line> lines, float2 pos, Color color, float size = .01f)
         {
             var diag = size / 2.8284f;
             var hor = size / 2;
@@ -61,19 +66,20 @@ namespace DotsNav.Navmesh.Systems
             lines.Add(new Line(pos + new float2(0, -hor), pos + new float2(0, hor), color));
         }
 
-        public unsafe static void DrawEdgeTriangle(ref NativeList<Line> lines, Edge* edge, UnsafeList<NavmeshMaterialType> materialTypes, float size = .05f)
+        public unsafe static void DrawEdgeTriangle(ref NativeList<Line> lines, Edge* edge, ReadOnly<NavmeshMaterialType> materialTypes, float size = .05f)
         {
-            Triangle tri = edge->Get3DTriangle().RoughInset(0.1f);
+            Triangle tri = edge->FaceTriangle().RoughInset(0.1f);
 
-            lines.Add(new Line(tri.p0, tri.p1, materialTypes[edge->MaterialTypeIndex].color));
-            lines.Add(new Line(tri.p1, tri.p2, materialTypes[edge->LPrev->MaterialTypeIndex].color));
-            lines.Add(new Line(tri.p2, tri.p0, materialTypes[edge->LNext->MaterialTypeIndex].color));
+            lines.Add(new Line(tri.p0, tri.p1, materialTypes[edge->MaterialType].color));
+            lines.Add(new Line(tri.p1, tri.p2, materialTypes[edge->LPrev->MaterialType].color));
+            lines.Add(new Line(tri.p2, tri.p0, materialTypes[edge->LNext->MaterialType].color));
         }
 
         //[BurstCompile]
         unsafe partial struct DrawNavmeshJob : IJobEntity
         {
             public NativeList<Pair<Triangle, Color>> outputMinorTriangles;
+            public NativeHashSet<int> closedMinorTriangles;
 
             [BurstDiscard]
             void Execute(NavmeshComponent navmesh, LocalToWorld ltw, NavmeshDrawComponent data)
@@ -83,74 +89,83 @@ namespace DotsNav.Navmesh.Systems
 
                 var lines = new NativeList<Line>(navmesh.Navmesh->Vertices * 3, Allocator.Temp);
 
-                UnsafeHashSet<int> closedMinorTriangles = new UnsafeHashSet<int>(10, Allocator.Temp);
-
                 var enumeratorMinor = navmesh.Navmesh->GetEdgeEnumerator(false);
 
-                foreach (IntPtr vertex in navmesh.Navmesh->_verticesSeq) {
+                /* foreach (IntPtr vertex in navmesh.Navmesh->_verticesSeq) { // TODO: Commented out for performance reasons
                     Vertex* vert = (Vertex*) vertex;
                     if (vert->GetEdge(false) == null) {
                         DrawPoint(ref lines, vert->Point, Color.red);
                         Debug.Assert(false, "Major graph should not contain vertices that Minor graph doesn't have");
                     }
-                }
+                } */
 
+                int numMinorEdges = 0;
                 int minorLefts = 0;
                 int minorRights = 0;
                 while (enumeratorMinor.MoveNext())
                 {
                     var edge = enumeratorMinor.Current;
+                    numMinorEdges++;
 
                     Debug.Assert(!Edge.IsEdgeTypeMajor(edge->EdgeType), $"edge->EdgeType: {edge->EdgeType}");
-                    Debug.Assert(edge->TriangleCost == 1f || edge->TriangleCost == 1f * 0.5f, $"edge->TriangleCost: {edge->TriangleCost}");
 
-                    if (data.DrawMode == DrawMode.Constrained && !edge->IsConstrained)
+
+                    if (!(edge->MaterialType == edge->LNext->MaterialType && edge->LNext->MaterialType == edge->LPrev->MaterialType)) {
+                        Debug.Assert(false, $"Unequal tri material, edge = {edge->MaterialType}, edge->LNext = {edge->LNext->MaterialType}, edge->LPrev = {edge->LPrev->MaterialType}");
+                        DrawEdgeTriangle(ref lines, edge, navmesh.Navmesh->MaterialTypes);
+                    }
+                    if (!(edge->Sym->MaterialType == edge->Sym->LNext->MaterialType && edge->Sym->LNext->MaterialType == edge->Sym->LPrev->MaterialType)) {
+                        Debug.Assert(false, $"Unequal tri material, edge->Sym = {edge->Sym->MaterialType}, edge->Sym->LNext = {edge->Sym->LNext->MaterialType}, edge->Sym->LPrev = {edge->Sym->LPrev->MaterialType}");
+                        DrawEdgeTriangle(ref lines, edge->Sym, navmesh.Navmesh->MaterialTypes);
+                    }
+
+                    if (!closedMinorTriangles.Contains(edge->TriangleId)) {
+                        closedMinorTriangles.Add(edge->TriangleId);
+                        outputMinorTriangles.Add(new Pair<Triangle, Color>(edge->FaceTriangle(), navmesh.Navmesh->MaterialTypes[edge->MaterialType].color));
+                    }
+                    if (!closedMinorTriangles.Contains(edge->Sym->TriangleId)) {
+                        closedMinorTriangles.Add(edge->Sym->TriangleId);
+                        outputMinorTriangles.Add(new Pair<Triangle, Color>(edge->Sym->FaceTriangle(), navmesh.Navmesh->MaterialTypes[edge->Sym->MaterialType].color));
+                    }
+
+
+                    if (data.DrawMode == DrawMode.None || data.DrawMode == DrawMode.ConstrainedNoTerrain || data.DrawMode == DrawMode.BothNoTerrain
+                        || (data.DrawMode == DrawMode.Constrained && !edge->IsConstrained))
+                        // && edge->IsConstrained && edge->QuadEdge->Crep.Length == 1 && edge->QuadEdge->Crep[0] == Entity.Null)
                         continue;
 
                     Edge.EdgeColors.TryGetValue(edge->EdgeType, out Color c);
-
 
                     
                     var a = math.transform(ltw.Value, edge->Org->Point.ToXxY());
                     var b = math.transform(ltw.Value, edge->Dest->Point.ToXxY());
 
-                    float3 tangent = MathLib.CalcTangentToNormal(math.normalizesafe(b - a));
-                    float3 leftOffset = 0.005f * MathLib.CalcTangentToNormal(math.normalizesafe(b - a));
-                    lines.Add(new Line(a + leftOffset, b + leftOffset, c));
+                    Debug.Assert(!MathLib.IsZero(b - a));
+                    float3 direction = math.normalizesafe(b - a);
+                    float3 tangent = MathLib.CalcTangentToNormal(direction);
+                    float3 leftOffset = 0.005f * MathLib.CalcTangentToNormal(direction);
+                    lines.Add(new Line(a + leftOffset + direction*0.005f, b + leftOffset - direction*0.005f, c));
 
-                    if (!(edge->MaterialTypeIndex == edge->LNext->MaterialTypeIndex && edge->LNext->MaterialTypeIndex == edge->LPrev->MaterialTypeIndex)) {
-                        Debug.Assert(false, $"Unequal tri material, edge = {edge->MaterialTypeIndex}, edge->LNext = {edge->LNext->MaterialTypeIndex}, edge->LPrev = {edge->LPrev->MaterialTypeIndex}");
-                        DrawEdgeTriangle(ref lines, edge, navmesh.Navmesh->MaterialTypes);
-                    }
-                    if (!(edge->Sym->MaterialTypeIndex == edge->Sym->LNext->MaterialTypeIndex && edge->Sym->LNext->MaterialTypeIndex == edge->Sym->LPrev->MaterialTypeIndex)) {
-                        Debug.Assert(false, $"Unequal tri material, edge->Sym = {edge->Sym->MaterialTypeIndex}, edge->Sym->LNext = {edge->Sym->LNext->MaterialTypeIndex}, edge->Sym->LPrev = {edge->Sym->LPrev->MaterialTypeIndex}");
-                        DrawEdgeTriangle(ref lines, edge->Sym, navmesh.Navmesh->MaterialTypes);
-                    }
-                    if (!closedMinorTriangles.Contains(edge->TriangleId)) {
-                        closedMinorTriangles.Add(edge->TriangleId);
-                        outputMinorTriangles.Add(new Pair<Triangle, Color>(edge->Get3DTriangle(), navmesh.Navmesh->MaterialTypes[edge->MaterialTypeIndex].color));
-                    } else if (!closedMinorTriangles.Contains(edge->Sym->TriangleId)) {
-                        closedMinorTriangles.Add(edge->Sym->TriangleId);
-                        outputMinorTriangles.Add(new Pair<Triangle, Color>(edge->Sym->Get3DTriangle(), navmesh.Navmesh->MaterialTypes[edge->Sym->MaterialTypeIndex].color));
-                    }
 
                     // Asserting Major Edges:
                     if (edge->EdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)) {
-                        float3 minorMidpoint = MathLib.Midpoint(a + leftOffset, b + leftOffset);
+                        float3 minorMidpoint = MathLib.Midpoint(a, b);
 
-                        Edge* majorEdge = edge->MajorEdge;
-                        Debug.Assert((edge->EdgeType & ~Edge.Type.Minor) == (majorEdge->EdgeType & ~Edge.Type.Major), $"edge->EdgeType: {edge->EdgeType}, majorEdge->EdgeType: {majorEdge->EdgeType}");
-                        Debug.Assert(majorEdge->Org != null && majorEdge->Dest != null, $"Org: {majorEdge->Org != null}, Dest: {majorEdge->Dest != null}");
-                        var a_Major = math.transform(ltw.Value, majorEdge->Org->Point.ToXxY());
-                        var b_Major = math.transform(ltw.Value, majorEdge->Dest->Point.ToXxY());
+                        edge->QuadEdge->VerifyMajorEdge();
+                        
+                        var a_Major = math.transform(ltw.Value, edge->MajorEdge->Org->Point.ToXxY());
+                        var b_Major = math.transform(ltw.Value, edge->MajorEdge->Dest->Point.ToXxY());
                         float3 majorMidpoint = MathLib.Midpoint(a_Major, b_Major);
 
                         float dot = math.dot(tangent, minorMidpoint - majorMidpoint);
+                        float edgeLength = math.length(b - a);
 
-                        // if dot too large draw line between
-                        if (!MathLib.IsEpsEqual(dot, 0.005f, 0.001f)) {
-                            Debug.Assert(MathLib.IsEpsEqual(dot, 0.005f, 0.001f), $"Length: {dot}");
-                            lines.Add(new Line(minorMidpoint, majorMidpoint, Color.grey));
+                        // If dot too large draw line between and midpoints
+                        if (!MathLib.LogicalIf(edgeLength > 0.1f, MathLib.IsEpsEqual(dot, 0f, 0.001f))) { // this 0.02f check is here because very small edges can rightfully be unaligned
+                            Debug.Assert(MathLib.IsEpsEqual(dot, 0.005f, 0.001f), $"dot: {dot}, edge length: {edgeLength}");
+                            lines.Add(new Line(minorMidpoint, majorMidpoint, Color.white));
+                            DrawPoint(ref lines, minorMidpoint.xz, Color.white, 0.03f);
+                            DrawPoint(ref lines, majorMidpoint.xz, Color.grey, 0.03f);
                         }
                     }
 
@@ -165,6 +180,7 @@ namespace DotsNav.Navmesh.Systems
                         }
                     }
                 }
+                // Debug.Log($"numMinorEdges: {numMinorEdges}");
 
                 // Debug.Log($"Minor Lefts: {minorLefts}");
                 // Debug.Log($"Minor Rights: {minorRights}");
@@ -174,13 +190,13 @@ namespace DotsNav.Navmesh.Systems
 
                 var enumerator = navmesh.Navmesh->GetEdgeEnumerator(true);
 
-                foreach (IntPtr vertex in navmesh.Navmesh->_verticesSeq) {
+                /* foreach (IntPtr vertex in navmesh.Navmesh->_verticesSeq) { // TODO: Commented out for performance reasons
                     Vertex* vert = (Vertex*) vertex;
                     if (vert->GetEdge(true) == null) {
                         // This is expected since Minor graph will have Terrain vertices
                         DrawPoint(ref lines, vert->Point, Color.green);
                     }
-                }
+                } */
 
                 int majorLefts = 0;
                 int majorRights = 0;
@@ -190,17 +206,16 @@ namespace DotsNav.Navmesh.Systems
 
                     Debug.Assert(Edge.IsEdgeTypeMajor(edge->EdgeType), $"edge->EdgeType: {edge->EdgeType}");
 
-                    if (data.DrawMode == DrawMode.Constrained && !edge->IsConstrained)
+                    if (data.DrawMode == DrawMode.None || (data.DrawMode == DrawMode.Constrained && !edge->IsConstrained))
                         continue;
 
                     Edge.EdgeColors.TryGetValue(edge->EdgeType, out Color c);
-
-                    // if (edge->Constrained) { c = data.ConstrainedColor; c.a += 30; } else { c = data.UnconstrainedColor; }
                         
                     var a = math.transform(ltw.Value, edge->Org->Point.ToXxY());
                     var b = math.transform(ltw.Value, edge->Dest->Point.ToXxY());
 
-                    lines.Add(new Line(a, b, c));
+                    float3 direction = math.normalizesafe(b - a);
+                    lines.Add(new Line(a + direction*0.005f, b + direction*0.005f, c));
 
                     if (false) {
                         if (edge->DebugRawClearanceLeft != -1) {

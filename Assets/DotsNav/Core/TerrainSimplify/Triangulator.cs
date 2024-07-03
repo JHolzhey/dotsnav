@@ -81,11 +81,11 @@ public unsafe struct Triangulator {
         return m_Errors[m_Queue[0]];
     }
 
-    public UnsafeList<float3> Points(float heightScaleFactor = 1f) {
+    public UnsafeList<float3> Points(float3 postScale, float3 postOffset = default) {
         UnsafeList<float3> points = new (m_Points.Length, Allocator.Temp);
         // int l1 = m_Heightmap.Length() - 1; // This was originally added to -p.y below, not sure why
         foreach (int2 p in m_Points) {
-            points.Add(new float3(p.x, m_Heightmap.At(p.x, p.y) * heightScaleFactor, p.y));
+            points.Add(m_Heightmap.ToWorld(p) * postScale + postOffset);
         }
         return points;
     }

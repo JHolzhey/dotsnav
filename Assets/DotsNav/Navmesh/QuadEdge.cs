@@ -22,18 +22,30 @@ namespace DotsNav.Navmesh
         public int Mark;
         public int Id;
         public bool RefineFailed;
-
+        
         unsafe Edge* _majorEdge;
         public unsafe Edge* MajorEdge {
             get => _majorEdge;
             set {
                 if (value != null) {
-                    UnityEngine.Debug.Assert(MathLib.IsParallel(Edge0.SegVector.XOY(), value->SegVector.XOY(), 0.001f));
-                    _majorEdge = MathLib.IsSameDir(Edge0.SegVector, value->SegVector) ? value : value->Sym; // Primary edge and MajorEdge face same direction
+                    _majorEdge = MathLib.IsSameDir(Edge0.SegVector, value->SegVector) ? value : value->Sym; // Primary edge and MajorEdge face the same direction for faster lookup
+                    VerifyMajorEdge();
                 } else {
                     _majorEdge = null;
                 }
             }
+        }
+
+        public unsafe void VerifyMajorEdge() {
+            UnityEngine.Debug.Assert(MathLib.LogicalIf(math.length(Edge0.SegVector) > 0.1f, MathLib.IsParallel(Edge0.SegVector.XOY(), _majorEdge->SegVector.XOY(), 0.001f)),
+                $"Major edge is not parallel, edgeLength: {math.length(Edge0.SegVector)}");
+
+            UnityEngine.Debug.Assert(MathLib.IsSameDir(Edge0.SegVector, _majorEdge->SegVector));
+            UnityEngine.Debug.Assert(MathLib.IsSameDir(Edge0.Sym->SegVector, _majorEdge->Sym->SegVector));
+
+            Debug.Assert(!Edge.IsEdgeTypeMajor(Edge0.EdgeType) && Edge.IsEdgeTypeMajor(_majorEdge->EdgeType), $"Edge0.EdgeType: {Edge0.EdgeType}, _majorEdge->EdgeType: {_majorEdge->EdgeType}");
+            Debug.Assert((Edge0.EdgeType & ~Edge.Type.Minor) == (_majorEdge->EdgeType & ~Edge.Type.Major), $"Edge0.EdgeType: {Edge0.EdgeType}, _majorEdge->EdgeType: {_majorEdge->EdgeType}");
+            Debug.Assert(_majorEdge->Org != null && _majorEdge->Dest != null, $"Org: {_majorEdge->Org != null}, Dest: {_majorEdge->Dest != null}");
         }
 
         public unsafe void Delete() { // Debug

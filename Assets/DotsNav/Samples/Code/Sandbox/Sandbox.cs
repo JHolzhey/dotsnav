@@ -10,6 +10,7 @@ using DotsNav.PathFinding.Hybrid;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using Unity.Collections.LowLevel.Unsafe;
 
 namespace DotsNav.Samples.Code
 {
@@ -62,6 +63,32 @@ namespace DotsNav.Samples.Code
             var s = new Vector3(size, size, size);
             _goal.localScale = s;
             _agent.GetComponent<DotsNavAgent>().Radius = size / 2;
+
+            float3 scaleFactor = 0.95f * (float3)Plane.Size.ToXxY(10f) / (float3)Terrain.activeTerrain.terrainData.size;
+
+            Terrain.activeTerrain.SimplifyTerrainMesh(0.005f, new float3(1f), out UnsafeList<float3> points, out UnsafeList<int3> triangles);
+            
+            for (int i = 0; i < points.Length; i++) {
+                points[i] *= scaleFactor;
+            }
+
+            // TODO: Test getting rid of 0.95f
+            for (int i = 0; i < triangles.Length; i++) {
+                // CommonLib.CreatePrimitive(PrimitiveType.Sphere, points[triangles[i].x], new float3(0.001f), Color.green);
+                // CommonLib.CreatePrimitive(PrimitiveType.Sphere, points[triangles[i].y], new float3(0.001f), Color.green);
+                // CommonLib.CreatePrimitive(PrimitiveType.Sphere, points[triangles[i].z], new float3(0.001f), Color.green);
+
+                // CommonLib.DebugSeg(points[triangles[i].x], points[triangles[i].y], Color.red, 0.4f);
+                // CommonLib.DebugSeg(points[triangles[i].y], points[triangles[i].z], Color.red, 0.4f);
+                // CommonLib.DebugSeg(points[triangles[i].z], points[triangles[i].x], Color.red, 0.4f);
+
+                // CommonLib.CreateDebugUI(i, (points[triangles[i].x].xz * planeSize / heightmapScale).XOY());
+                // CommonLib.CreateDebugUI(i, (points[triangles[i].y].xz * planeSize / heightmapScale).XOY());
+                // CommonLib.CreateDebugUI(i, (points[triangles[i].z].xz * planeSize / heightmapScale).XOY());
+            }
+
+
+            // Plane.InsertTerrainSlopes(points, triangles);
         }
 
         void Update()
@@ -113,7 +140,7 @@ namespace DotsNav.Samples.Code
         // Obstacles can be inserted by spawing prefabs, but when they are based on
         // user input or generated procedurally they can be inserted by supplying a
         // list of vertices to Navmesh.InsertObstacle
-        void Insert()
+        void Insert(bool forceTerrain = false)
         {
             foreach (var points in _points)
             {
@@ -123,7 +150,7 @@ namespace DotsNav.Samples.Code
 
                 if (points.Count == 0)
                     continue;
-                var obstacleReference = Plane.InsertObstacle(points, Input.GetKey(KeyCode.LeftCommand) ? ConstraintType.Terrain : ConstraintType.Obstacle);
+                var obstacleReference = Plane.InsertObstacle(points, (Input.GetKey(KeyCode.LeftCommand) || forceTerrain) ? ConstraintType.Terrain : ConstraintType.Obstacle);
                 _obstacles.Add(obstacleReference);
             }
             _points.Clear();
@@ -307,7 +334,7 @@ namespace DotsNav.Samples.Code
                         if ((Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) && _points[0].Count > 2)
                             _points[0].Add(_points[0][0]);
                         Insert();
-                    } else if (_points[0].Count == 1) {
+                    } else if (_points[0].Count == 1) { // Creating a point constraint hackily
                         _points[0].Add(_points[0][0]);
                         Insert();
                     }
@@ -316,10 +343,11 @@ namespace DotsNav.Samples.Code
                 if (Input.GetMouseButtonDown(0))
                 {
                     var ray = _camera.ScreenPointToRay(Input.mousePosition);
-                    if (Physics.Raycast(ray.origin, ray.direction * 10, out var hit))
+                    if (Physics.Raycast(ray.origin, ray.direction * 10, out var hit) && !hit.collider.gameObject.GetComponent<Terrain>())
                         _target = hit.collider.gameObject;
-                    if (_target == null || _points[0].Count > 0)
+                    if (_target == null || _points[0].Count > 0) {
                         _points[0].Add(mousePos);
+                    }
                 }
 
                 if (Input.GetMouseButtonUp(0))
@@ -339,12 +367,39 @@ namespace DotsNav.Samples.Code
                     _target.transform.position += mouseDelta.ToXxY();
             }
 
-            if (Input.GetKeyDown(KeyCode.E))
-                _navmesh.DrawMode = _navmesh.DrawMode == DrawMode.Constrained ? DrawMode.Both : DrawMode.Constrained;
-            if (Input.GetKeyDown(KeyCode.H))
-                Help.gameObject.SetActive(!Help.gameObject.activeSelf);
+            if (Input.GetKeyDown(KeyCode.E)) {
+                if (_navmesh.DrawMode == DrawMode.None)
+                    _navmesh.DrawMode = DrawMode.Both;
+                    
+                else if (_navmesh.DrawMode == DrawMode.Constrained)
+                    _navmesh.DrawMode = DrawMode.Both;
+                else if (_navmesh.DrawMode == DrawMode.Both)
+                    _navmesh.DrawMode = DrawMode.Constrained;
 
-            if ((Input.GetKey(KeyCode.T) || Input.GetKeyDown(KeyCode.R)) && _obstacles.Count > 0)
+                else if (_navmesh.DrawMode == DrawMode.ConstrainedNoTerrain)
+                    _navmesh.DrawMode = DrawMode.BothNoTerrain;
+                else if (_navmesh.DrawMode == DrawMode.BothNoTerrain)
+                    _navmesh.DrawMode = DrawMode.ConstrainedNoTerrain;
+            }
+            if (Input.GetKeyDown(KeyCode.T)) {
+                if (_navmesh.DrawMode == DrawMode.None)
+                    _navmesh.DrawMode = DrawMode.Both;
+
+                if (_navmesh.DrawMode == DrawMode.Constrained)
+                    _navmesh.DrawMode = DrawMode.ConstrainedNoTerrain;
+                else if (_navmesh.DrawMode == DrawMode.ConstrainedNoTerrain)
+                    _navmesh.DrawMode = DrawMode.Constrained;
+
+                else if (_navmesh.DrawMode == DrawMode.Both)
+                    _navmesh.DrawMode = DrawMode.BothNoTerrain;
+                else if (_navmesh.DrawMode == DrawMode.BothNoTerrain)
+                    _navmesh.DrawMode = DrawMode.Both;
+            }
+            if (Input.GetKeyDown(KeyCode.H)) {
+                Help.gameObject.SetActive(!Help.gameObject.activeSelf);
+            }
+
+            if (Input.GetKeyDown(KeyCode.R) && _obstacles.Count > 0)
             {
                 Plane.RemoveObstacle(_obstacles.Last());
                 _obstacles.RemoveAt(_obstacles.Count - 1);

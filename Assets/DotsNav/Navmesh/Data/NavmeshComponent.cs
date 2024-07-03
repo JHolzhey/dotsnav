@@ -19,6 +19,20 @@ namespace DotsNav.Navmesh.Data
             this.color = color;
         }
     }
+
+    public struct TerrainMesh {
+        public readonly UnsafeList<float3> SlopePoints;
+        public readonly UnsafeList<int3> SlopeTriangles;
+        public TerrainMesh(Heightmap heightMap, float maxError, float3 postScaleFactor, float3 postPositionOffset = default) {
+
+            Triangulator triangulator = new Triangulator(heightMap);
+            triangulator.Run(maxError, int.MaxValue, int.MaxValue);
+
+            SlopePoints = triangulator.Points(postScaleFactor, postPositionOffset);
+            SlopeTriangles = triangulator.Triangles();
+        }
+    }
+    
     /// <summary>
     /// Create to trigger creation of a navmesh. Destroy to trigger destruction of a navmesh.
     /// </summary>
@@ -44,9 +58,12 @@ namespace DotsNav.Navmesh.Data
         /// </summary>
         public readonly int ExpectedVerts;
 
+
+        public readonly TerrainMesh TerrainMesh;
+
         public readonly UnsafeList<NavmeshMaterialType> MaterialTypes;
 
-        public NavmeshComponent(float2 size, int expectedVerts, UnsafeList<NavmeshMaterialType> materialTypes, float mergePointsDistance = 1e-3f, float collinearMargin = 1e-6f)
+        public NavmeshComponent(float2 size, int expectedVerts, UnsafeList<NavmeshMaterialType> materialTypes, TerrainMesh terrainMesh, float mergePointsDistance = 1e-3f, float collinearMargin = 1e-6f)
         {
             UnityEngine.Debug.Assert(materialTypes.Length < 30, "Currently cannot have more than X Material Types");
             Size = size;
@@ -54,6 +71,7 @@ namespace DotsNav.Navmesh.Data
             MaterialTypes = materialTypes;
             MergePointsDistance = mergePointsDistance;
             CollinearMargin = collinearMargin;
+            TerrainMesh = terrainMesh;
             Navmesh = default;
         }
 

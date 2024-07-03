@@ -60,7 +60,7 @@ namespace DotsNav.Navmesh
 
                 closed.TryAdd((IntPtr) step.Vertex);
 
-                var e = step.Vertex->GetEdge(true); // TODO: True // TODO: First see if things break, then fix and fix everywhere, search all TODOs;
+                var e = step.Vertex->GetEdge(isMajor);
                 var ii = 0;
                 do
                 {
@@ -82,7 +82,7 @@ namespace DotsNav.Navmesh
                     }
 
                     e = e->ONext;
-                } while (e != step.Vertex->GetEdge(true)); // TODO: True
+                } while (e != step.Vertex->GetEdge(isMajor));
             }
 
             return false;

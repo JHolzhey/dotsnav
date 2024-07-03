@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using DotsNav.Collections;
 using DotsNav.Navmesh.Data;
+using Unity.Burst.Intrinsics;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
@@ -9,6 +10,22 @@ using Unity.Mathematics;
 
 namespace DotsNav.Navmesh
 {
+    public unsafe struct ConstraintData : IEquatable<ConstraintData> {
+        public Vertex* firstVertex;
+        public byte materialType;
+        public int polygonCCW;
+        public bool IsMaterialPolygon => polygonCCW == 0;
+
+        public ConstraintData(Vertex* firstVertex) {
+            this.firstVertex = firstVertex;
+            this.materialType = 0;
+            this.polygonCCW = 0;
+        }
+
+        public bool Equals(ConstraintData other) => this.firstVertex == other.firstVertex;
+        public override int GetHashCode() => new IntPtr(firstVertex).GetHashCode();
+    }
+    
     /// <summary>
     /// Provides access to edges and vertices in the triangulation
     /// </summary>
@@ -22,7 +39,8 @@ namespace DotsNav.Navmesh
         float _e;
         float _collinearMargin;
 
-        UnsafeParallelHashMap<Entity, IntPtr> _constraints;
+
+        UnsafeParallelHashMap<Entity, ConstraintData> _constraints;
         BlockPool<Vertex> _vertices;
         BlockPool<QuadEdge> _quadEdges;
         internal UnsafeList<IntPtr> _verticesSeq; // Accessible for debug
@@ -46,7 +64,7 @@ namespace DotsNav.Navmesh
         internal HashSet<int> DestroyedTriangles;
         Deque<IntPtr> _refinementQueue;
 
-        internal UnsafeList<NavmeshMaterialType> MaterialTypes;
+        public ReadOnly<NavmeshMaterialType> MaterialTypes;
         // internal FixedList128Bytes<float> MaterialTypeCosts;
         internal HashSet<IntPtr> AddedOrModifiedMajorEdges;
 
@@ -75,7 +93,7 @@ namespace DotsNav.Navmesh
             _vertices = new BlockPool<Vertex>(blockSize, initialBlocks, Allocator.Persistent);
             _verticesSeq = new UnsafeList<IntPtr>(component.ExpectedVerts, Allocator.Persistent);
             _quadEdges = new BlockPool<QuadEdge>(3 * blockSize, initialBlocks, Allocator.Persistent);
-            _constraints = new UnsafeParallelHashMap<Entity, IntPtr>(component.ExpectedVerts, Allocator.Persistent);
+            _constraints = new UnsafeParallelHashMap<Entity, ConstraintData>(component.ExpectedVerts, Allocator.Persistent);
             V = new HashSet<IntPtr>(16, Allocator.Persistent);
             C = new HashSet<IntPtr>(16, Allocator.Persistent);
             _edgeSearch = new EdgeSearch(100, 100, Allocator.Persistent);
@@ -96,32 +114,33 @@ namespace DotsNav.Navmesh
             DestroyedTriangles = new HashSet<int>(64, Allocator.Persistent);
             _refinementQueue = new Deque<IntPtr>(24, Allocator.Persistent);
 
+            MaterialTypes = new ReadOnly<NavmeshMaterialType>(component.MaterialTypes.Ptr, component.MaterialTypes.Length);
+
             AddedOrModifiedMajorEdges = new HashSet<IntPtr>(64, Allocator.Persistent);
 
             // MaterialTypeCosts = new FixedList128Bytes<float>();
-            MaterialTypes = component.MaterialTypes;
-            MaterialTypes.Add(default);
-            for (int i = MaterialTypes.Length - 1; i > 0; i--) { // Inserting into the start so that Index of 0 is Default // TODO: Use Insert Extension
-                MaterialTypes[i] = MaterialTypes[i - 1];
-                UnityEngine.Debug.Log($"i: {i}, materialTypeIndex: {i - 1}, Material Color: {MaterialTypes[i - 1].color}");
-            }
-            MaterialTypes[0] = new NavmeshMaterialType("Default", 1f, UnityEngine.Color.gray);
+            // component.MaterialTypes.Add(default);
+            // for (int i = component.MaterialTypes.Length - 1; i > 0; i--) { // Inserting into the start so that Index of 0 is Default // TODO: Use Insert Extension
+            //     component.MaterialTypes[i] = component.MaterialTypes[i - 1];
+            //     UnityEngine.Debug.Log($"i: {i}, materialTypeIndex: {i - 1}, Material Color: {component.MaterialTypes[i - 1].color}");
+            // }
+            // component.MaterialTypes[0] = new NavmeshMaterialType("Default", 1f, UnityEngine.Color.gray);
 
-            for (int i = 0; i < MaterialTypes.Length; i++) {
-                UnityEngine.Debug.Log($"i: {i}, Material Color: {MaterialTypes[i].color}");
-            }
+            // for (int i = 0; i < component.MaterialTypes.Length; i++) {
+            //     UnityEngine.Debug.Log($"i: {i}, Material Color: {component.MaterialTypes[i].color}");
+            // }
 
             _mark = default;
             _edgeId = default;
             _triangleId = default;
 
-            BuildBoundingBoxes();
+            BuildBoundingBoxes(component.TerrainMesh);
         }
 
         public static byte MinMaterialType(byte material1, byte material2) { return material1 < material2 ? material1 : material2; }
         public static byte MaxMaterialType(byte material1, byte material2) { return material1 > material2 ? material1 : material2; }
 
-        void BuildBoundingBoxes()
+        void BuildBoundingBoxes(TerrainMesh terrainMesh)
         {
             // Setup and Initialize Navmesh bounds, must do it manually because Insert will not work with an empty plane
             var bmin = -Extent - 1;
@@ -167,15 +186,33 @@ namespace DotsNav.Navmesh
             Splice(leftMinor->Sym, bottomMinor);
 
             Connect(rightMinor, bottomMinor, Edge.Type.Minor | Edge.Type.Ignore, null);
+            
+            PlanePoint* tri = stackalloc PlanePoint[4];
+            for (int i = 0; i < terrainMesh.SlopeTriangles.Length; i++) {
+                int3 slopeTriangle = terrainMesh.SlopeTriangles[i];
+                if (!Contains(terrainMesh.SlopePoints[slopeTriangle.x].xz)
+                    || !Contains(terrainMesh.SlopePoints[slopeTriangle.y].xz)
+                    || !Contains(terrainMesh.SlopePoints[slopeTriangle.z].xz))
+                {
+                    UnityEngine.Debug.LogError("Terrain point is not in Navmesh");
+                    CommonLib.CreatePrimitive(UnityEngine.PrimitiveType.Sphere, terrainMesh.SlopePoints[slopeTriangle.x], new float3(1f), UnityEngine.Color.red);
+                    continue;
+                }
 
+                tri[0] = terrainMesh.SlopePoints[slopeTriangle.x];
+                tri[1] = terrainMesh.SlopePoints[slopeTriangle.y];
+                tri[2] = terrainMesh.SlopePoints[slopeTriangle.z];
+                tri[3] = terrainMesh.SlopePoints[slopeTriangle.x];
 
+                InsertMinor(new Span<PlanePoint>(tri, 4), Entity.Null, float4x4.identity, Edge.Type.Terrain);
+            }
 
             AddedOrModifiedMajorEdges.Clear();
 
             UnityEngine.Debug.Log($"Starting insert: =======================================================================================");
 
-            var bounds = stackalloc float2[] {-Extent, new float2(Extent.x, -Extent.y), Extent, new float2(-Extent.x, Extent.y), -Extent};
-            InsertMajor(bounds, 0, 5, Entity.Null, float4x4.identity, Edge.Type.Obstacle);
+            PlanePoint* bounds = stackalloc PlanePoint[] {-Extent, new float2(Extent.x, -Extent.y), Extent, new float2(-Extent.x, Extent.y), -Extent};
+            InsertMajor(new Span<PlanePoint>(bounds, 5), Entity.Null, float4x4.identity, Edge.Type.Obstacle);
 
             UnityEngine.Debug.Log($"_modifiedMajorEdges.Length: {AddedOrModifiedMajorEdges.Length} =======================================================================================");
             foreach (IntPtr e in AddedOrModifiedMajorEdges) {

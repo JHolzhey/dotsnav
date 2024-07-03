@@ -52,7 +52,7 @@ namespace DotsNav.Navmesh
         /// <summary>
         /// Returns cost of traversing this edge's left face, i.e. this value will be the same for this edge, LNext and LPrev.
         /// </summary>
-        public byte MaterialTypeIndex { get; internal set; }
+        public byte MaterialType { get; internal set; }
 
         /// <summary>
         /// Returns a stricly increasing value unique to this edge's left face, i.e. this value will be the same for this edge,
@@ -76,7 +76,7 @@ namespace DotsNav.Navmesh
             _clearanceRight = -1;
             TriangleId = -1;
             TriangleCost = 1f;
-            MaterialTypeIndex = 0;
+            MaterialType = 0;
         }
 
         /// <summary>
@@ -126,7 +126,8 @@ namespace DotsNav.Navmesh
             if (IsEdgeTypeMajor(e->EdgeType)) {
                 UnityEngine.Debug.Assert(MathLib.LogicalIff(e->EdgeType.HasAnyFlagsB(Type.Obstacle), e->IsConstrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
             } else {
-                UnityEngine.Debug.Assert(MathLib.LogicalIff(e->EdgeType.HasAnyFlagsB(Type.Terrain), e->IsConstrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
+                // The following is not true because a Minor Terrain could be overwitten by a Minor Clearance | Obstacle
+                //UnityEngine.Debug.Assert(MathLib.LogicalIff(e->EdgeType.HasAnyFlagsB(Type.Terrain), e->IsConstrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
 
                 if (e->EdgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance)) {
                     UnityEngine.Debug.Assert(e->MajorEdge != null, "Minor Obstaces and Clearances must have Major edges");
@@ -143,13 +144,14 @@ namespace DotsNav.Navmesh
         }
 
         public float CalcSlopeCost() {
-            Triangle tri = Get3DTriangle();
-            float3 normal = tri.Normal;
-            CommonLib.DebugVector(tri.Centroid(), tri.Normal, UnityEngine.Color.cyan);
-            return normal.y > 0f ? 1f / normal.y : float.MaxValue;
+            float3 normal = -FaceTriangle().Normal; // Negative because CCW -> CW
+            // CommonLib.DebugVector(FaceTriangle().Centroid(), -FaceTriangle().Normal, UnityEngine.Color.cyan, 0.025f, 0.1f);
+            UnityEngine.Debug.Assert(normal.y >= 0 && normal.y < 1.001f, $"normal.y: {normal.y}");
+            return (normal.y > 0f) ? (1f / MathLib.Cube(normal.y)) : float.MaxValue; // TODO: Maybe disallow vertical edges so we can remove this check
         }
 
-        public Triangle Get3DTriangle() => new Triangle(LNext->Org->Point3D, Org->Point3D, LPrev->Org->Point3D);
+        public Triangle FaceTriangle() => new Triangle(LNext->Org->Point3D, Org->Point3D, LPrev->Org->Point3D);
+        public Seg Seg() => new Seg(Org->Point3D, Dest->Point3D);
 
         public float2 SegVector => Dest->Point - Org->Point;
         public float3 SegVector3D => Dest->Point3D - Org->Point3D;
@@ -211,15 +213,13 @@ namespace DotsNav.Navmesh
         public bool HasMajorEdge => MajorEdge != null;
         public bool ContainsMajorEdge(Edge* edgeMajor) => MajorEdge == edgeMajor || MajorEdge == edgeMajor->Sym;
         public Edge* GetMajorEdge() { // Assumes MajorEdge exists. Returns MajorEdge facing same direction as this edge
-            UnityEngine.Debug.Assert(MathLib.IsParallel(SegVector.XOY(), MajorEdge->SegVector.XOY(), 0.001f));
-            UnityEngine.Debug.Assert(MathLib.IsSameDir(SegVector, (IsPrimary ? MajorEdge : MajorEdge->Sym)->SegVector));
+            QuadEdge->VerifyMajorEdge();
             return IsPrimary ? MajorEdge : MajorEdge->Sym;
         }
 
         public ReadOnly<Entity> Constraints => new(QuadEdge->Crep.Ptr, QuadEdge->Crep.Length);
         public bool IsConstrained => QuadEdge->Crep.Length > 0;
         
-        // public bool IsBarrier => QuadEdge->Crep.Length > 0;
         public bool IsConstrainedBy(Entity id) => QuadEdge->Crep.Contains(id);
         public bool ConstraintsEqual(Edge* edge) => EdgeType == edge->EdgeType && QuadEdge->Crep.SequenceEqual(edge->QuadEdge->Crep);
 

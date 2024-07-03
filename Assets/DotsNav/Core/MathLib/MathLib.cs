@@ -33,15 +33,6 @@ using MI = System.Runtime.CompilerServices.MethodImplAttribute;
 //     }
 // }
 
-public struct Pair<T, U> where T : unmanaged  where U : unmanaged {
-    public Pair(T first, U second) {
-        this.first = first;
-        this.second = second;
-    }
-    public T first;
-    public U second;
-};
-
 
 namespace Unity.Mathematics
 {
@@ -204,7 +195,8 @@ public static class MathLib
     public static float AnglesDistance(float angle0, float angle1) => math.abs(AnglesSeparation(angle0, angle1));
     public static float NormalizeAngle0_2PI(float angle) => smod(angle, Rad360);
     public static float Sq(float number) => number*number;
-    public static float Sq(float3 vector) => Sq(vector.x) + Sq(vector.y) + Sq(vector.z);
+    public static float Cube(float number) => number*number*number;
+    // public static float Sq(float3 vector) => Sq(vector.x) + Sq(vector.y) + Sq(vector.z);
 
     public static bool IsInRangeInclusive(float number, float min, float max) => (min <= number) && (number <= max);
     public static float3 ProjNormVectorXZPlane(float3 vector) { vector.y = 0; return math.normalize(vector); }
@@ -255,6 +247,9 @@ public static class MathLib
         Debug.Assert(IsNormalized(vectorUnit0) && IsNormalized(vectorUnit1), $"Given unit vectors must be normalized; {vectorUnit0}, {vectorUnit1}");
         return IsEpsEqual(math.abs(math.dot(vectorUnit0, vectorUnit1)), 0f, epsilon);
     }
+
+    public static float Average(float float0, float float1) => (float0 + float1) * 0.5f;
+    public static float Average(float float0, float float1, float float2) => (float0 + float1 + float2) * 1f/3f;
 
     public unsafe static T* NullCoalesce<T>(T* a, T* b) where T : unmanaged => a != null ? a : b;
 

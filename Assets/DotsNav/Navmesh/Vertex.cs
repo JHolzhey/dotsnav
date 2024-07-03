@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Entities.UniversalDelegates;
 using Unity.Mathematics;
 
 namespace DotsNav.Navmesh
@@ -19,8 +20,8 @@ namespace DotsNav.Navmesh
         /// Returns the position of this vertex
         /// </summary>
         public float2 Point { get; internal set; }
-        public float elevation;
-        public readonly float3 Point3D => Point.XOY(elevation);
+        public float Height { get; internal set; }
+        public readonly float3 Point3D => Point.XOY(Height);
 
         Edge* MajorEdge;
         Edge* MinorEdge;
@@ -33,12 +34,17 @@ namespace DotsNav.Navmesh
             }
         }
 
-
         internal Edge* GetEdge(bool isMajor) => isMajor ? MajorEdge : MinorEdge;
         internal int SeqPos;
         internal int Mark; // Used when potentially removing Constraint Vertices (depth-first search), to mark already visited Vertices // TODO: I don't think this is true
         internal int PointConstraints;
         internal int ConstraintHandles;
+
+        public Vertex(float2 point, int seqPos) : this() {
+            Point = point;
+            SeqPos = seqPos;
+            Height = 0f;
+        }
 
         /// <summary>
         /// Allows for the enumeration of all edges that share this vertex as their origin:
@@ -61,7 +67,7 @@ namespace DotsNav.Navmesh
         }
 
         internal void RemoveEdge(Edge* e, bool isMajor) {
-            DotsNav.Navmesh.Edge.VerifyEdge(e, isMajor);
+            Edge.VerifyEdge(e, isMajor);
             if (isMajor) {
                 MajorEdge = e->ONext == e ? null : e->ONext;
             } else {
@@ -69,7 +75,7 @@ namespace DotsNav.Navmesh
             }
         }
         internal void AddEdge(Edge* e, bool isMajor) {
-            DotsNav.Navmesh.Edge.VerifyEdgeType(e->EdgeType, isMajor);
+            Edge.VerifyEdgeType(e->EdgeType, isMajor);
             if (isMajor) {
                 MajorEdge = e;
             } else {
@@ -98,11 +104,11 @@ namespace DotsNav.Navmesh
 
             bool _debugIsMajor;
 
-            internal EdgeEnumerator(Vertex* v, bool isMajor = true)
+            internal EdgeEnumerator(Vertex* v, bool isMajor)
             {
                 Assert.IsTrue(v != null);
                 _debugIsMajor = isMajor;
-                _start = isMajor ? v->MajorEdge : v->MinorEdge;
+                _start = v->GetEdge(isMajor);
                 _started = false;
                 Current = null;
             }
@@ -119,7 +125,7 @@ namespace DotsNav.Navmesh
                 
                 if (Current != null)
                 {
-                    DotsNav.Navmesh.Edge.VerifyEdgeType(Current->EdgeType, _debugIsMajor);
+                    Edge.VerifyEdgeType(Current->EdgeType, _debugIsMajor);
 
                     Current = Current->ONext;
                     

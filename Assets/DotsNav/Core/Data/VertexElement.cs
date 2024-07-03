@@ -10,14 +10,19 @@ namespace DotsNav.Data
     [InternalBufferCapacity(0)]
     public struct VertexElement : IBufferElementData
     {
-        public float2 Value;
+        public PlanePoint Value;
 
-        VertexElement(float2 v)
-        {
-            Value = v;
+        VertexElement(float2 v) {
+            Value = new PlanePoint(v);
+        }
+        VertexElement(float3 v) {
+            Value = new PlanePoint(v);
         }
 
-        public static implicit operator float2(VertexElement e) => e.Value;
-        public static implicit operator VertexElement(float2 v) => new(v);
+        public static implicit operator float3(VertexElement e) => e.Value;
+        public static implicit operator VertexElement(float3 v) => new (v);
+
+        public static implicit operator float2(VertexElement e) => e.Value.point;
+        public static implicit operator VertexElement(float2 v) => new (v);
     }
 }
