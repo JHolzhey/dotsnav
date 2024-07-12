@@ -20,7 +20,7 @@ namespace DotsNav.Navmesh
 
         public unsafe bool Search(Vertex* start, Vertex* goal, Entity constraintId, Edge.Type newConstraintEdgeType, Edge* majorEdge)
         {
-            UnityEngine.Debug.LogWarning($"Edge Search; {newConstraintEdgeType}");
+            // UnityEngine.Debug.Log($"Edge Search; {newConstraintEdgeType}");
 
             Assert.IsTrue(start != goal);
             bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);

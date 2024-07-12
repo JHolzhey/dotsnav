@@ -1,9 +1,9 @@
-using System.Diagnostics;
 using DotsNav.Collections;
 using DotsNav.PathFinding.Data;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
+using Debug = UnityEngine.Debug;
 
 namespace DotsNav.PathFinding
 {

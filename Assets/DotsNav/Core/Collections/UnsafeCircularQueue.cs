@@ -1,5 +1,5 @@
 using System;
-using System.Diagnostics;
+using Debug = UnityEngine.Debug;
 
 
 namespace Unity.Collections.LowLevel.Unsafe {

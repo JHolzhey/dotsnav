@@ -44,7 +44,7 @@ namespace DotsNav.Samples.Code
         public Color HighlightColor;
         Color _restoreColor;
 
-        readonly Dictionary<ObstacleOrTerrainReference, List<Vector2>> _obstacles = new();
+        readonly Dictionary<ConstraintReference, List<Vector2>> _obstacles = new();
         readonly List<Vector2> _added = new();
         readonly List<DotsNavPathFindingAgent> _found = new();
         DotsNavPathFindingAgent[] _agents;

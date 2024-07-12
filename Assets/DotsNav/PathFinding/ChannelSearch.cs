@@ -4,7 +4,6 @@ using DotsNav.Drawing;
 using DotsNav.Navmesh;
 using DotsNav.PathFinding.Data;
 using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
@@ -14,10 +13,10 @@ namespace DotsNav.PathFinding
     readonly unsafe struct ChannelSearch
     {
         readonly PriorityQueue<Step> _open;
-        readonly HashSet<int> _closed;
+        readonly NativeHashSet<int> _closed;
         readonly NativeHashMap<int, Step> _closedStepsDebug;
-        readonly HashSet<int> _closedEdges;
-        readonly HashSet<IntPtr> _closedVerts;
+        readonly NativeHashSet<int> _closedEdges;
+        readonly NativeHashSet<IntPtr> _closedVerts;
         readonly List<Step> _steps;
         readonly List<PossibleDisturbance> _verts;
         readonly List<int> _validGoalEdges;
@@ -25,14 +24,18 @@ namespace DotsNav.PathFinding
         public ChannelSearch(int maxNodes, int intialSteps, Allocator allocator) : this()
         {
             _open = new PriorityQueue<Step>(maxNodes);
-            _closed = new HashSet<int>(maxNodes, allocator);
+            _closed = new NativeHashSet<int>(maxNodes, allocator);
             _closedStepsDebug = new NativeHashMap<int, Step>(10, allocator);
-            _closedEdges = new HashSet<int>(36, allocator);
-            _closedVerts = new HashSet<IntPtr>(36, allocator);
+            _closedEdges = new NativeHashSet<int>(36, allocator);
+            _closedVerts = new NativeHashSet<IntPtr>(36, allocator);
             _steps = new List<Step>(intialSteps, allocator);
             _verts = new List<PossibleDisturbance>(allocator);
             _validGoalEdges = new List<int>(allocator);
         }
+
+        public interface INextClearance { public float Get(Edge* next); }
+        public struct ClearanceLeft : INextClearance { public readonly float Get(Edge* next) => next->ClearanceLeft; }
+        public struct ClearanceRight : INextClearance { public readonly float Get(Edge* next) => next->Sym->ClearanceRight; }
 
         public PathQueryState Search(float2 start, float2 goal, Navmesh.Navmesh* navmesh, List<Gate> path, float radius, DynamicBuffer<TriangleElement> triangleIds, out int cost)
         {
@@ -112,6 +115,7 @@ namespace DotsNav.PathFinding
                     }
 
                     triangleIds.Add(startId);
+
                     return PathQueryState.PathFound;
                 }
             }
@@ -126,8 +130,8 @@ namespace DotsNav.PathFinding
             ExpandInitial(startEdge->LNext->Sym);
             ExpandInitial(startEdge->LPrev->Sym);
             
-            closed.TryAdd(startId);
-            closed.TryAdd(goalId);
+            closed.Add(startId);
+            closed.Add(goalId);
 
             while (open.Count > 0)
             {
@@ -135,40 +139,41 @@ namespace DotsNav.PathFinding
                 var id = step.Id;
 
                 if (id == goalId) // If found path:
-                {
+                {                    
                     var e = step.Edge->TriangleId == goalId ? step.Edge : step.Edge->Sym;
 
                     float distanceCost = 0;
                     float totalCost = 0;
                     float maxSlopeCost = 0;
 
-                      CommonLib.DebugSeg(step.ReferencePoint, goal3D, Color.blue, 0.008f, 0.03f);
+                    DebugDrawArrow(step.ReferencePoint, goal3D, Color.blue);
                     while (step.Previous != -1)
                     {
-                          CommonLib.DebugSeg(steps[step.Previous].ReferencePoint, step.ReferencePoint, Color.blue, 0.008f, 0.03f);
+                        DebugDrawArrow(steps[step.Previous].ReferencePoint, step.ReferencePoint, Color.blue);
                         AddStepToGatePath(step);
                         step = steps[step.Previous];
                     }
-                      CommonLib.DebugSeg(start3D, step.ReferencePoint, Color.blue, 0.008f, 0.03f);
+                    DebugDrawArrow(start3D, step.ReferencePoint, Color.blue);
                     AddStepToGatePath(step);
 
                     void AddStepToGatePath(Step step)
                     {
                         Debug.Assert(step.MainEdgeType != Edge.Type.Obstacle, "Steps should not be obstacles");
-                        if (step.MainEdgeType == Edge.Type.Clearance) {
-                            path.Add(new Gate { Left = step.Edge->GetMajorEdge()->Org->Point, Right = step.Edge->GetMajorEdge()->Dest->Point });
-                            triangleIds.Add(step.Edge->TriangleId);
-                        } else if (step.MainEdgeType == Edge.Type.Terrain) {
-                            path.Add(new Gate { Left = step.Edge->Org->Point, Right = step.Edge->Dest->Point });
-                            triangleIds.Add(step.Edge->TriangleId);
-                        }
-                        float stepSlope = step.Edge->CalcSlopeCost();
-                        if (stepSlope > maxSlopeCost) {
-                            maxSlopeCost = stepSlope;
-                        }
+                        // if (step.MainEdgeType == Edge.Type.Clearance) {
+                        //     path.Add(new Gate { Left = step.Edge->GetMajorEdge()->Org->Point, Right = step.Edge->GetMajorEdge()->Dest->Point });
+                        //     triangleIds.Add(step.Edge->TriangleId);
+                        // } else { //if (step.MainEdgeType == Edge.Type.Terrain) {
+                        //     path.Add(new Gate { Left = step.Edge->Org->Point, Right = step.Edge->Dest->Point });
+                        //     triangleIds.Add(step.Edge->TriangleId);
+                        // }
+                        
+                        path.Add(new Gate { Left = step.Edge->Org->Point, Right = step.Edge->Dest->Point });
+                        triangleIds.Add(step.Edge->TriangleId);
 
+                        // Debug:
+                        maxSlopeCost = math.max(maxSlopeCost, step.Edge->CalcSlopeCost());
                         totalCost += step.G;
-                        distanceCost += step.distance;
+                        distanceCost += step.debugDistance;
                     }
 
                     triangleIds.Add(startId);
@@ -181,69 +186,106 @@ namespace DotsNav.PathFinding
                     // AddEndpointEdges(start, e, false);
 
                     path.Reverse();
+                    for (int i = 0; i < path.Length; i++) {
+                        // DebugDrawArrow(path[i].Left.XOY(), path[i].Right.XOY(), Color.white, 0.01f);
+                    } 
                     return PathQueryState.PathFound;
                 }
 
-                closed.TryAdd(id);
+                closed.Add(id);
                 closedStepsDebug.TryAdd(id, step);
 
+                Edge* next = step.Edge->LNext->Sym;
+                float clearanceRight = GetEdgeClearance<ClearanceRight>(next, step.PrevMajorEdge, out Edge* currMajorEdgeR);
+                Expand(next, clearanceRight, currMajorEdgeR);
+                // DebugDrawArrow(next->Sym->Org->Point3D, next->Sym->Dest->Point3D, Color.white, 0.01f);
 
-                var next = step.Edge->LNext;
-                float clearanceRight = -1;
-                if (next->MainEdgeType == Edge.Type.Clearance) {
-                    clearanceRight = next->GetMajorEdge()->ClearanceRight;
-                } else if (next->MainEdgeType != Edge.Type.Obstacle) {
-                    clearanceRight = float.MaxValue;
-                }
-                Expand(next->Sym, clearanceRight); // note the Sym here
 
                 next = step.Edge->LPrev->Sym;
-                float clearanceLeft = -1;
-                if (next->MainEdgeType == Edge.Type.Clearance) {
-                    clearanceLeft = next->GetMajorEdge()->ClearanceLeft;
-                } else if (next->MainEdgeType != Edge.Type.Obstacle) {
-                    clearanceLeft = float.MaxValue;
-                }
-                Expand(next, clearanceLeft);
-
+                float clearanceLeft = GetEdgeClearance<ClearanceLeft>(next, step.PrevMajorEdge, out Edge* currMajorEdgeL);
+                Expand(next, clearanceLeft, currMajorEdgeL);
+                // DebugDrawArrow(next->Org->Point3D, next->Dest->Point3D, Color.blue, 0.01f);
 
                 ++cost;
 
-                void Expand(Edge* edge, float clearance)
+                float GetEdgeClearance<TNextClearance>(Edge* next, Edge* prevMajorEdge, out Edge* currMajorEdge) where TNextClearance : unmanaged, INextClearance
+                {
+                    currMajorEdge = prevMajorEdge; // If this Minor edge doesn't have a MajorEdge, then prevMajorEdge carries over
+                    switch(next->MainEdgeType) 
+                    {
+                    case Edge.Type.Clearance:
+                        currMajorEdge = next->GetMajorEdge();
+
+                        float clearance = float.MaxValue;
+                        if (currMajorEdge->DNext == prevMajorEdge) {
+                            clearance = new ClearanceRight().Get(currMajorEdge);
+                        } else if (currMajorEdge->OPrev == prevMajorEdge) {
+                            clearance = new ClearanceLeft().Get(currMajorEdge);
+                        } else if (prevMajorEdge != null && currMajorEdge->Sym != prevMajorEdge) { // Then we are dealing with an overwritten MajorEdge edge
+                            clearance = -1;
+                            Debug.LogWarning("Overwritten MajorEdge");
+// #if UNITY_ASSERTIONS
+//                             Debug.Assert(step.Edge->IsMajorEdgeOverwritten || next->IsMajorEdgeOverwritten, $"Wrong, MajorEdge was not Overwritten: {currMajorEdge == prevMajorEdge}, {currMajorEdge->ONext == prevMajorEdge}, {currMajorEdge->LNext == prevMajorEdge}, {currMajorEdge->DPrev == prevMajorEdge}, {currMajorEdge->OPrev == prevMajorEdge}, {currMajorEdge->DNext == prevMajorEdge}, {currMajorEdge->RPrev == prevMajorEdge}, {currMajorEdge->RNext == prevMajorEdge}");
+// #endif
+                        }
+                        // if (prevMajorEdge != null) { DebugDrawArrow(prevMajorEdge->Org->Point3D, prevMajorEdge->Dest->Point3D, Color.white, 0.01f); }
+                        return clearance;
+                    case Edge.Type.Terrain:
+                        // if is more than clearance, special centering code
+                        return new TNextClearance().Get(next);
+                    case Edge.Type.Obstacle:
+                        return -1;
+                    case Edge.Type.Ignore:
+                        return float.MaxValue;
+                    default:
+                        Debug.Assert(false, $"Unknown MainEdgeType: {next->MainEdgeType}");
+                        return -1;
+                    }
+                }
+
+                void Expand(Edge* next, float clearance, Edge* currMajorEdge)
                 {
                     if (clearance < diameter)
                         return;
 
-                    if (edge->TriangleId == goalId)
+                    if (next->TriangleId == goalId)
                     {
-                        if (!validGoalEdges.Contains(edge->QuadEdgeId))
+                        if (!validGoalEdges.Contains(next->QuadEdgeId))
                             return;
                     }
-                    else if (closed.Contains(edge->TriangleId)) {
-                        var newStepDebugTest = new Step(edge, steps.Length, step.G + C(step.ReferencePoint, edge, out var refPDebug), H(refPDebug, goal3D), step.StepId, refPDebug, step.ReferencePoint);
+                    else if (closed.Contains(next->TriangleId)) { // If next triangle has been visited, don't continue
+                        var newStepDebugTest = new Step(null, next, steps.Length, step.G + C(step.ReferencePoint, next, out var refPDebug), H(refPDebug, goal3D), step.StepId, refPDebug, step.ReferencePoint);
                         
-                        if (closedStepsDebug.ContainsKey(edge->TriangleId)) {
-                            Step edgePrevStep = closedStepsDebug[edge->TriangleId];
-                            Debug.Assert(edgePrevStep._gPlusH < newStepDebugTest._gPlusH, "Testing");
-                            Debug.Assert(edgePrevStep.G < newStepDebugTest.G, "Testing 2");
+                        if (closedStepsDebug.ContainsKey(next->TriangleId)) {
+                            Step edgePrevStep = closedStepsDebug[next->TriangleId];
+                            Debug.Assert(edgePrevStep._gPlusH <= newStepDebugTest._gPlusH, "Testing");
+                            Debug.Assert(edgePrevStep.G <= newStepDebugTest.G, "Testing 2");
+                            if (edgePrevStep.G > newStepDebugTest.G) {
+                                // DebugDrawArrow(Color.white);
+                            }
                         }
                         return;
                     }
-
-                    // Color color = Color.red;
-                    // if (edge == next) {} else {}
-                    // CommonLib.DebugSeg(step.Edge->Org->Point3D, step.Edge->Dest->Point3D, color, 0.005f, 0.03f, 0.015f);
+                    
 
                     var newStep = new Step
                     (
-                        edge,
+                        currMajorEdge,
+                        next,
                         steps.Length,
-                        step.G + C(step.ReferencePoint, edge, out var referencePoint),
+                        step.G + C(step.ReferencePoint, next, out var referencePoint),
                         H(referencePoint, goal3D),
                         step.StepId,
                         referencePoint,
                         step.ReferencePoint
                     );
+
+                    Step debugStep = newStep;
+                    while (debugStep.Previous != -1)
+                    {
+                        DebugDrawArrow(steps[debugStep.Previous].ReferencePoint, debugStep.ReferencePoint, Color.black);
+                        debugStep = steps[debugStep.Previous];
+                    }
 
                     steps.Add(newStep);
                     open.Insert(newStep);
@@ -251,6 +293,10 @@ namespace DotsNav.PathFinding
             }
 
             return PathQueryState.NoPath;
+
+
+
+
 
             void AddEndpointEdges(float2 endpoint, Edge* edge, bool reverse)
             {
@@ -303,7 +349,7 @@ namespace DotsNav.PathFinding
                                 ? new Gate {Left = path[0].Left, Right = p, IsGoalGate = true}
                                 : new Gate {Left = p, Right = path[0].Right, IsGoalGate = true};
 
-                            DebugDraw(gate.Left, gate.Right, Color.cyan);
+                            DebugDraw(gate.Left, gate.Right, Color.white);
                             path.Insert(0, gate);
                         }
                         else
@@ -319,6 +365,7 @@ namespace DotsNav.PathFinding
                 }
             }
 
+            // TODO: Can ignore/comment out EndpointDisturbed for now anyways since we want agents that are clipping into obstacles to work
             void GetValidGoalEdges(List<int> valid)
             {
                 valid.Clear();
@@ -343,14 +390,17 @@ namespace DotsNav.PathFinding
 
                 var newStep = new Step
                 (
+                    null,
                     edge,
                     steps.Length,
-                    C(start3D, edge, out var referencePoint),
+                    C(start3D, edge, out float3 referencePoint),
                     H(referencePoint, goal3D),
                     -1,
                     referencePoint,
                     start3D
                 );
+
+                DebugDrawArrow(start3D, referencePoint, Color.black);
 
                 steps.Add(newStep);
                 open.Insert(newStep);
@@ -379,10 +429,10 @@ namespace DotsNav.PathFinding
             }
 
             // TODO: Use lengthsq instead? Also, add Heuristic weight?
-            float C(PlanePoint from, Edge* edge, out float3 referencePoint)
+            float C(PlanePoint from, Edge* next, out float3 referencePoint)
             {
-                var o = edge->Org->Point;
-                var d = edge->Dest->Point;
+                var o = next->Org->Point;
+                var d = next->Dest->Point;
                 var od = d - o; // Same as SegVector
                 var offset = math.normalize(od) * radius;
                 o += offset;
@@ -393,12 +443,13 @@ namespace DotsNav.PathFinding
                     referencePoint2D = math.lengthsq(goal - o) < math.lengthsq(goal - d) ? o : d; // TODO: Not sure which one to use
                     // referencePoint2D = Math.ClosestPointOnLineSegment(goal/* from.point */, o, d);
                 }
-                referencePoint = new Seg(edge->Org->Point3D, edge->Dest->Point3D).PointGivenXZ(referencePoint2D);
+                referencePoint = new Seg(next->Org->Point3D, next->Dest->Point3D).PointGivenXZ(referencePoint2D);
 
                 Debug.Assert(MathLib.IsEpsEqual(referencePoint2D, referencePoint.xz, 0.001f), $"referencePoint2D: {referencePoint2D}, referencePoint.xz: {referencePoint.xz}");
 
-                float materialCost = materialTypes[edge->MaterialType].cost;
-                float slopeCost = edge->CalcSlopeCost();
+                Edge* traversedFace = next->Sym;
+                float materialCost = materialTypes[traversedFace->TriangleMaterial].cost;
+                float slopeCost = traversedFace->CalcSlopeCost();
 
                 // Debug.Log($"slopeCost: {slopeCost}, materialCost: {materialCost}");
                 Debug.Assert(materialCost * slopeCost >= 1f, $"materialCost * slopeCost: {materialCost * slopeCost}");
@@ -444,14 +495,19 @@ namespace DotsNav.PathFinding
                 return math.length(opposite - v) < d && Math.IntersectSegSeg(v, opposite, s, g);
             }
         }
+        static void DebugDrawArrow(float3 from, float3 to, Color color, float tangentOffset = 0f)
+        {
+            float3 offset = MathLib.CalcTangentToNormal(to - from)*tangentOffset;
+            Arrow.Draw(from.XOZ(from.y + 0.01f) + offset, to.XOZ(to.y + 0.01f) + offset, 0.01f, color);
+        }
 
-        [System.Diagnostics.Conditional("FUNNEL_DEBUG")]
+        // [System.Diagnostics.Conditional("FUNNEL_DEBUG")]
         static void DebugDraw(float2 from, float2 to, Color color)
         {
             Line.Draw(from.ToXxY(.01f), to.ToXxY(.01f), color);
         }
 
-        [System.Diagnostics.Conditional("FUNNEL_DEBUG")]
+        // [System.Diagnostics.Conditional("FUNNEL_DEBUG")]
         static void DebugDraw(Quad q, Color color)
         {
             DebugDraw(q.A, q.B, color);
@@ -505,7 +561,7 @@ namespace DotsNav.PathFinding
             var v = e->Org;
             if (Contains(r, v->Point) && !_closedVerts.Contains((IntPtr) v))
             {
-                _closedVerts.TryAdd((IntPtr) v);
+                _closedVerts.Add((IntPtr) v);
                 verts.Add(new PossibleDisturbance(v));
             }
 
@@ -516,14 +572,14 @@ namespace DotsNav.PathFinding
         {
             if (_closedEdges.Contains(e->QuadEdgeId))
                 return;
-            _closedEdges.TryAdd(e->QuadEdgeId);
+            _closedEdges.Add(e->QuadEdgeId);
 
             if (Intersect(r, e->Org->Point, e->Dest->Point))
             {
                 var v = e->LNext->Dest;
                 if (Contains(r, v->Point) && !_closedVerts.Contains((IntPtr) v))
                 {
-                    _closedVerts.TryAdd((IntPtr) v);
+                    _closedVerts.Add((IntPtr) v);
                     verts.Add(new PossibleDisturbance(v));
                 }
 
@@ -576,6 +632,7 @@ namespace DotsNav.PathFinding
         {
             // todo confusing, probably better off making this StepId and add TriangleId, could forego index in priorityqueue
             public int Id => Edge->TriangleId;
+            public readonly Edge* PrevMajorEdge;
             public readonly Edge* Edge;
             public readonly Edge.Type MainEdgeType;
             public readonly int StepId;
@@ -584,11 +641,12 @@ namespace DotsNav.PathFinding
             public readonly PlanePoint ReferencePoint;
             public readonly float _gPlusH; // TODO: Made public for debug
 
-            public readonly float distance; // TODO: Made public for debug
+            public readonly float debugDistance;
 
 
-            public Step(Edge* edge, int stepId, float g, float h, int previous, PlanePoint referencePoint, float3 prevPoint)
+            public Step(Edge* prevMajorEdge, Edge* edge, int stepId, float g, float h, int previous, PlanePoint referencePoint, float3 prevPoint)
             {
+                PrevMajorEdge = prevMajorEdge;
                 Edge = edge;
                 MainEdgeType = edge->MainEdgeType;
                 StepId = stepId;
@@ -597,7 +655,7 @@ namespace DotsNav.PathFinding
                 Previous = previous;
                 ReferencePoint = referencePoint;
 
-                distance = math.length(referencePoint.Point3D - prevPoint);
+                debugDistance = math.length(referencePoint.Point3D - prevPoint);
             }
 
             public int CompareTo(Step other)

@@ -28,12 +28,14 @@ namespace DotsNav.Drawing
         {
             if (DrawInGameView)
                 Render();
+            Clear();
         }
 
         void OnDrawGizmos()
         {
             if (Application.isPlaying)
                 Render();
+            Clear();
         }
 
         void OnDestroy()

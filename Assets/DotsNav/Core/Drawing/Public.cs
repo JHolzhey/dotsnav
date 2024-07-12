@@ -32,29 +32,28 @@ namespace DotsNav.Drawing
             _lines = new Lines(count * 5);
         }
 
-        internal void Draw(float3 x, float3 v, Color color)
+        internal void Draw(float3 x0, float3 x1, float tipLength, Color color)
         {
-            var x0 = x;
-            var x1 = x + v;
+            var v = x1 - x0;
 
             _lines.Draw(x0, x1, color);
 
             var length = Math.NormalizeWithLength(v, out var dir);
             Math.CalculatePerpendicularNormalized(dir, out var perp, out var perp2);
-            float3 scale = length * 0.2f;
+            // float3 scale = length * 0.2f;
 
-            _lines.Draw(x1, x1 + (perp - dir) * scale, color);
-            _lines.Draw(x1, x1 - (perp + dir) * scale, color);
-            _lines.Draw(x1, x1 + (perp2 - dir) * scale, color);
-            _lines.Draw(x1, x1 - (perp2 + dir) * scale, color);
+            _lines.Draw(x1, x1 + (perp - dir) * tipLength, color);
+            _lines.Draw(x1, x1 - (perp + dir) * tipLength, color);
+            _lines.Draw(x1, x1 + (perp2 - dir) * tipLength, color);
+            _lines.Draw(x1, x1 - (perp2 + dir) * tipLength, color);
         }
     }
 
     struct Arrow
     {
-        internal static void Draw(float3 x, float3 v, Color color)
+        internal static void Draw(float3 x0, float3 x1, float tipLength, Color color)
         {
-            new Arrows(1).Draw(x, v, color);
+            new Arrows(1).Draw(x0, x1, tipLength, color);
         }
     }
 

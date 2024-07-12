@@ -69,7 +69,7 @@ namespace DotsNav.Navmesh.Hybrid
             var plane = GetComponent<DotsNavPlane>();
 
             UnsafeList<NavmeshMaterialType> surfaceTypes = new UnsafeList<NavmeshMaterialType>(10, Allocator.Persistent) { // TODO: Expose to Editor
-                new NavmeshMaterialType("Default", 1f, Color.gray),
+                new NavmeshMaterialType("Default", 2f, Color.gray),
                 new NavmeshMaterialType("PavedRoad", 1f, Color.blue),
                 new NavmeshMaterialType("Clay", 1.1f, Color.red),
                 new NavmeshMaterialType("Grass", 1.1f, Color.green),

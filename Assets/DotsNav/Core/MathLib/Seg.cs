@@ -54,13 +54,17 @@ public struct Seg : IComponentData, IGeometry
 
 
     public float3 PointGivenXZ(float2 xz) { // TODO: Make Line struct and make this a method
-        if (!MathLib.IsPointOnLineGivenX(start, Direction, xz.x, out float _, out float3 pointOnLine)) {
-            Debug.Assert(MathLib.IsEpsEqual(Direction.x, 0f, 0.001f));
-            if (!MathLib.IsPointOnLineGivenZ(start, Direction, xz.y, out _, out pointOnLine)) {
-                Debug.Assert(IsVertical);
-                pointOnLine = start; // If this then Seg is vertical
-            }
+        float3 direction = Direction;
+        float3 pointOnLine = start; // Value taken if IsVertical
+        bool success = true;
+        if (direction.x != 0) {
+            success = MathLib.IsPointOnLineGivenX(start, Direction, xz.x, out _, out pointOnLine);
+        } else if (direction.z != 0) {
+            success = MathLib.IsPointOnLineGivenZ(start, Direction, xz.y, out _, out pointOnLine);
+        } else {
+            Debug.Assert(IsVertical);
         }
+        Debug.Assert(success, "Should not be possible");
         return pointOnLine;
     }
 

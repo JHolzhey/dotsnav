@@ -5,6 +5,7 @@ using Unity.Mathematics;
 using System;
 using UnityEngine;
 
+
 namespace DotsNav.Navmesh
 {
     public unsafe partial struct Navmesh
@@ -54,10 +55,10 @@ namespace DotsNav.Navmesh
             //Debug.Log("Swap");
             Debug.Assert(!e->IsConstrained && e->EdgeType.HasNoFlagsB(Edge.Type.Obstacle | Edge.Type.Terrain) && !e->EdgeType.HasAllFlagsB(Edge.Type.Minor | Edge.Type.Clearance),
                 $"Cannot flip a constrained edge. EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
-            Debug.Assert(e->MaterialType == e->Sym->MaterialType, $"Material Types are different! e->MaterialType: {e->MaterialType}, e->Sym->MaterialType: {e->Sym->MaterialType}");
+            Debug.Assert(e->TriangleMaterial == e->Sym->TriangleMaterial, $"Material Types are different! e->MaterialType: {e->TriangleMaterial}, e->Sym->MaterialType: {e->Sym->TriangleMaterial}");
 
-            Debug.Assert(e->MaterialType == e->LNext->MaterialType && e->LNext->MaterialType == e->LPrev->MaterialType, "edge Tri has unequal types");
-            Debug.Assert(e->Sym->MaterialType == e->Sym->LNext->MaterialType && e->Sym->LNext->MaterialType == e->Sym->LPrev->MaterialType, "edge->Sym Tri has unequal types");
+            Debug.Assert(e->TriangleMaterial == e->LNext->TriangleMaterial && e->LNext->TriangleMaterial == e->LPrev->TriangleMaterial, "edge Tri has unequal types");
+            Debug.Assert(e->Sym->TriangleMaterial == e->Sym->LNext->TriangleMaterial && e->Sym->LNext->TriangleMaterial == e->Sym->LPrev->TriangleMaterial, "edge->Sym Tri has unequal types");
 
             bool isMajor = Edge.IsEdgeTypeMajor(e->EdgeType);
             Edge.VerifyEdge(e, isMajor);
@@ -96,8 +97,8 @@ namespace DotsNav.Navmesh
             DestroyedTriangle(e->TriangleId);
             DestroyedTriangle(e->Sym->TriangleId);
 
-            NewTriangle(e, e->MaterialType);
-            NewTriangle(e->Sym, e->MaterialType);
+            NewTriangle(e, e->TriangleMaterial);
+            NewTriangle(e->Sym, e->TriangleMaterial);
         }
 
         static void SetEndPoints(Edge* edge, Vertex* org, Vertex* dest, bool isMajor)
@@ -148,7 +149,7 @@ namespace DotsNav.Navmesh
             // Should not Verify edge because it may not have been given a crep or added cid yet
             if (edge->LNext->LNext->LNext == edge)
             {
-                NewTriangle(edge, edge->MaterialType);
+                NewTriangle(edge, edge->TriangleMaterial);
                 return;
             }
 
@@ -189,7 +190,7 @@ namespace DotsNav.Navmesh
                 }
 
                 var b = Connect(edge->LPrev, c->LNext, newConnectionEdgesType, null);
-                b->MaterialType = edge->MaterialType;
+                b->TriangleMaterial = edge->TriangleMaterial;
                 Edge.VerifyEdge(b);
                 RetriangulateFace(b, isMajor);
                 connected = true;
@@ -203,14 +204,14 @@ namespace DotsNav.Navmesh
                 }
 
                 var a = Connect(c, edge->LNext, newConnectionEdgesType, null);
-                a->MaterialType = edge->MaterialType;
+                a->TriangleMaterial = edge->TriangleMaterial;
                 Edge.VerifyEdge(a);
                 RetriangulateFace(a, isMajor);
                 connected = true;
             }
 
             if (connected) {
-                NewTriangle(edge, edge->MaterialType);
+                NewTriangle(edge, edge->TriangleMaterial);
             }
         }
 
@@ -529,8 +530,8 @@ FoundEdgeMajor:
 
             Edge* majorEdge = edge->MajorEdge;
             Edge.Type newSplitConstraintEdgesType = edge->EdgeType;
-            byte material = edge->MaterialType;
-            byte symMaterial = edge->Sym->MaterialType;
+            byte material = edge->TriangleMaterial;
+            byte symMaterial = edge->Sym->TriangleMaterial;
 
             var result = existingMajorVertex != null ? existingMajorVertex : CreateVertex(p);
             result->Height = p.Is3D ? p.height : edge->Seg().PointGivenXZ(p).y;
@@ -626,7 +627,7 @@ FoundEdgeMajor:
 
             Debug.Assert(MathLib.LogicalIf(isMajor, existingMajorVertex == null), $"newConstraintEdgeType: {newConstraintEdgeType}");
 
-            byte material = edge->MaterialType;
+            byte material = edge->TriangleMaterial;
             Edge.Type newConnectionEdgesType = Edge.Type.None;
             if (isMajor) { // All Edges connecting to Major (i.e. an Obstacle) constraint are Clearance edges
                 Debug.Assert(newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle), $"newConstraintEdgeType: {newConstraintEdgeType}, edge->EdgeType: {edge->EdgeType}");
@@ -699,7 +700,7 @@ FoundEdgeMajor:
                     if (GetSupport(p0.After + _e / 2 * dir, p1.P - _e * dir, dir, isMajor, out var p))
                     {
                         //Debug.Log("InsertSegmentRecursive - p0 modified, insert point");
-                        var after = InsertPoint(SupportPlanePoint(p, p0.Vertex, p1.Vertex), newConstraintEdgeType);
+                        var after = InsertPoint(new PlanePoint(p), newConstraintEdgeType);
                         InsertSegmentRecursive(after, p1.Vertex, cid, dir, start, end, newConstraintEdgeType, majorEdge);
                         _edgeSearch.Search(p0.Vertex, after, cid, newConstraintEdgeType, majorEdge);
                     }
@@ -714,7 +715,7 @@ FoundEdgeMajor:
                     if (GetSupport(p1.Before - _e / 2 * dir, p0.P + _e * dir, -dir, isMajor, out var p))
                     {
                         //Debug.Log("InsertSegmentRecursive - p1 modified, insert point");
-                        var before = InsertPoint(SupportPlanePoint(p, p0.Vertex, p1.Vertex), newConstraintEdgeType);
+                        var before = InsertPoint(new PlanePoint(p), newConstraintEdgeType);
                         InsertSegmentRecursive(p0.Vertex, before, cid, dir, start, end, newConstraintEdgeType, majorEdge);
                         _edgeSearch.Search(before, p1.Vertex, cid, newConstraintEdgeType, majorEdge);
                     }
@@ -730,8 +731,8 @@ FoundEdgeMajor:
                         GetSupport(p1.Before - _e / 2 * dir, s1 + _e * dir, -dir, isMajor, out var s2))
                     {
                         //Debug.Log("InsertSegmentRecursive - both modified, double insert point");
-                        var v0 = InsertPoint(SupportPlanePoint(s1, p0.Vertex, p1.Vertex), newConstraintEdgeType);
-                        var v1 = InsertPoint(SupportPlanePoint(s2, p0.Vertex, p1.Vertex), newConstraintEdgeType);
+                        var v0 = InsertPoint(new PlanePoint(s1), newConstraintEdgeType);
+                        var v1 = InsertPoint(new PlanePoint(s2), newConstraintEdgeType);
                         InsertSegmentRecursive(v0, v1, cid, dir, start, end, newConstraintEdgeType, majorEdge);
                         _edgeSearch.Search(p0.Vertex, v0, cid, newConstraintEdgeType, majorEdge);
                         _edgeSearch.Search(v1, p1.Vertex, cid, newConstraintEdgeType, majorEdge);
@@ -745,9 +746,6 @@ FoundEdgeMajor:
 
                 a = p1.Vertex;
                 _insertedPoints.Add(p1);
-            }
-            PlanePoint SupportPlanePoint(float2 point, Vertex* v0, Vertex* v1) { // TODO: This is a bit hacky, but will probably work fine
-                return new PlanePoint(point, MathLib.Average(v0->Height, v1->Height));
             }
         }
 
@@ -1087,12 +1085,19 @@ FoundEdgeMajor:
                     SetEdgeTypeMinor(edge, newConstraintEdgeType, majorEdge);
                 } else if (existingEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)) {
                     // If existing type is Obstacle or Clearance, do nothing, since nothing overwrites it
+#if UNITY_ASSERTIONS
                     if (newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)) {
-                        Debug.Assert(edge->ContainsMajorEdge(majorEdge));
+                        Debug.Assert(edge->HasMajorEdge);
+                        if (edge->HasMajorEdge && !edge->ContainsMajorEdge(majorEdge)) { // Checking to prevent null exception
+                            Debug.LogWarning($"edge's MajorEdge has been overwritten; edge->MajorEdge->EdgeType: {edge->MajorEdge->EdgeType}, edge->EdgeType: {edge->EdgeType}, newConstraintEdgeType: {newConstraintEdgeType}");
+                            CommonLib.DebugSeg(edge->Org->Point3D, edge->Dest->Point3D, Color.blue, 0.001f, math.INFINITY, 0f);
+                            edge->IsMajorEdgeOverwritten = true;
+                        }
                     } else {
                         Debug.Assert(existingEdgeType.HasAnyFlagsB(Edge.Type.Terrain | Edge.Type.Obstacle | Edge.Type.Clearance));
                         Debug.Assert(edge->MajorEdge != null && majorEdge == null);
                     }
+#endif
                     // Minor Terrain cannot overwrite Minor Obstacle or Clearance, so do nothing
                     // Also, Minor Obstacle would never try to overwrite Minor Clearance and vice-versa because they would be removed first
                     // Also, Minor Terrain cannot overwrite Minor Clearance | Obstacle
@@ -1116,8 +1121,8 @@ FoundEdgeMajor:
                 }
 
                 connection = Connect(a, b, newConstraintEdgeType, majorEdge);
-                connection->MaterialType = MaxMaterialType(connection->LNext->MaterialType, connection->LPrev->MaterialType);
-                connection->Sym->MaterialType = MaxMaterialType(connection->Sym->LNext->MaterialType, connection->Sym->LPrev->MaterialType);
+                connection->TriangleMaterial = MaxMaterial(connection->LNext->TriangleMaterial, connection->LPrev->TriangleMaterial);
+                connection->Sym->TriangleMaterial = MaxMaterial(connection->Sym->LNext->TriangleMaterial, connection->Sym->LPrev->TriangleMaterial);
                 RetriangulateFace(connection, isMajor);
                 RetriangulateFace(connection->Sym, isMajor);
             } else {
@@ -1281,12 +1286,13 @@ FoundEdgeMajor:
             BFSEdgesSetMaterialType(initialEdge, materialType, boundaryCid, ref _);
         }
 
+        // Giving boundaryCid of Entity.Null means the BFS will stop at any constrained edge
         void BFSEdgesSetMaterialType(Edge* initialEdge, byte materialType, Entity boundaryCid, ref UnsafeHashSet<Entity> otherOverlappingConstraints)
         {
             _openEdgeQueue.Clear();
 
             int mark = NextMark;
-            SetTriangleMaterialType(initialEdge, materialType);
+            SetTriangleMaterial(initialEdge, materialType);
             _openEdgeQueue.Enqueue(initialEdge->ONext);
             _openEdgeQueue.Enqueue(initialEdge->DPrev);
 
@@ -1304,7 +1310,7 @@ FoundEdgeMajor:
                             continue;
                         }
                     }
-                    SetTriangleMaterialType(edge, materialType);
+                    SetTriangleMaterial(edge, materialType);
                     _openEdgeQueue.Enqueue(edge->ONext);
                     _openEdgeQueue.Enqueue(edge->DPrev);
                     edge->Mark = mark;
@@ -1391,6 +1397,7 @@ FoundEdgeMajor:
             if (removedMajorEdge->Org->GetEdge(false) == null || removedMajorEdge->Dest->GetEdge(false) == null) { // If no Minor edges attached yet then early-out
                 return;
             }
+            UnsafeList<Ptr<Edge>> otherMajorEdges = new UnsafeList<Ptr<Edge>>(1, Allocator.Temp);
             Edge* prevEdge = null;
             Vertex* currentMinorOrg = removedMajorEdge->Org;
             while (currentMinorOrg != removedMajorEdge->Dest) // Depth first search for all (Quad)Edges that reference removedMajorEdge as their MajorEdge
@@ -1456,7 +1463,7 @@ FoundEdgeMajor:
                 Debug.Assert(edge->EdgeType.HasAllFlagsB(Edge.Type.Minor) && edge->EdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance),
                     $"edge->EdgeType: {edge->EdgeType}, removedMajorEdge->EdgeType: {removedMajorEdge->EdgeType}");
 
-                ResetClearance(edge); // TODO: Should do this?
+                ResetClearance(edge);
 
                 edge->MajorEdge = null;
 
@@ -1580,7 +1587,7 @@ FoundEdgeMajor:
 
                     if (!edge->IsConstrained) // If no other constraints attached to this edge then it can be flipped to satisfy delaunay
                     {
-                        // TODO: RefineFailed for Minor? ResetClearance?
+                        // TODO: RefineFailed for Minor?
                         edge->RefineFailed = false;
                         ResetClearance(edge);
 
@@ -1603,9 +1610,10 @@ FoundEdgeMajor:
                             
                             _flipStackMinor.Push(edge);
                         }
-                        byte minMaterialType = MinMaterialType(edge->MaterialType, edge->Sym->MaterialType);
-                        SetTriangleMaterialType(edge, minMaterialType);
-                        SetTriangleMaterialType(edge->Sym, minMaterialType);
+                        // This will be taken care of by RemoveCostPolygon anyways. (Or maybe this needs to stay even if we do RemoveCostPolygon)
+                        byte minMaterialType = MinMaterial(edge->TriangleMaterial, edge->Sym->TriangleMaterial);
+                        SetTriangleMaterial(edge, minMaterialType);
+                        SetTriangleMaterial(edge->Sym, minMaterialType);
                         FlipQuad(isMajor);
                     }
                     Edge.VerifyEdge(edge, isMajor);
@@ -1636,8 +1644,7 @@ FoundEdgeMajor:
             {
                 Edge.VerifyEdge(e.Current, isMajor);
 
-                // if (e.Current->Constrained)
-                if (e.Current->IsEdgeTypeConstrained())
+                if (e.Current->IsEdgeTypeConstrained() /* e.Current->Constrained */)
                 {
                     if (amount == 2) // If v connects to more than 2 constraints then we know we can't remove it so just return
                         return;
@@ -1654,10 +1661,10 @@ FoundEdgeMajor:
                     if (isMajor) {
                         V.TryAdd((IntPtr) e.Current->Dest);
                     }
-                    minMaterialType = MinMaterialType(MinMaterialType(minMaterialType, e.Current->Sym->MaterialType), e.Current->MaterialType);
+                    minMaterialType = MinMaterial(MinMaterial(minMaterialType, e.Current->Sym->TriangleMaterial), e.Current->TriangleMaterial);
                 }
                 var face = RemoveVertex(v, isMajor);
-                face->MaterialType = minMaterialType; // TODO: Will remove all of this MinMaterial related code once improve removing material polygons
+                face->TriangleMaterial = minMaterialType; // TODO: Will remove all of this MinMaterial related code once improve removing material polygons
                 // face->MaterialType = MinMaterialType(face->LNext->MaterialType, face->LPrev->MaterialType); // TODO: Not sure if this will work
 
                 RetriangulateFace(face, isMajor);
@@ -1689,20 +1696,20 @@ FoundEdgeMajor:
                 }
                 //Debug.LogWarning($"collinear == 0");
                 Debug.Assert(e1->ContainsMajorEdge(e2->MajorEdge) && e2->ContainsMajorEdge(e1->MajorEdge));
-                Assert.IsTrue(e1->MaterialType == e2->Sym->MaterialType && e1->Sym->MaterialType == e2->MaterialType, 
-                    $"collinear - e1 (yellow): {e1->MaterialType}, e2 (green): {e2->MaterialType}, e1->Sym (red): {e1->Sym->MaterialType}, e2->Sym (blue): {e2->Sym->MaterialType}");
+                Assert.IsTrue(e1->TriangleMaterial == e2->Sym->TriangleMaterial && e1->Sym->TriangleMaterial == e2->TriangleMaterial, 
+                    $"collinear - e1 (yellow): {e1->TriangleMaterial}, e2 (green): {e2->TriangleMaterial}, e1->Sym (red): {e1->Sym->TriangleMaterial}, e2->Sym (blue): {e2->Sym->TriangleMaterial}");
                 var v1 = e1->Dest;
                 var v2 = e2->Dest;
                 var crep = e1->QuadEdge->Crep;
-                byte sameMaterial1 = e1->MaterialType;
-                byte sameMaterial2 = e2->MaterialType;
+                byte sameMaterial1 = e1->TriangleMaterial;
+                byte sameMaterial2 = e2->TriangleMaterial;
                 Edge* sameMajorEdge = e1->MajorEdge;
                 Edge.Type sameEdgeType = e1->EdgeType;
                 RemoveEdge(e1, false, isMajor);
                 RemoveVertex(v, isMajor);
                 var e3 = Connect(v1, v2, sameEdgeType, sameMajorEdge);
-                e3->MaterialType = sameMaterial2;
-                e3->Sym->MaterialType = sameMaterial1;
+                e3->TriangleMaterial = sameMaterial2;
+                e3->Sym->TriangleMaterial = sameMaterial1;
                 RetriangulateFace(e3, isMajor);
                 RetriangulateFace(e3->Sym, isMajor);
                 e3->QuadEdge->Crep = crep;
@@ -1742,19 +1749,19 @@ FoundEdgeMajor:
             //Debug.Log($"RemoveSemiCollinear");
             Debug.Assert(e1->ContainsMajorEdge(e2->MajorEdge) && e2->ContainsMajorEdge(e1->MajorEdge));
 
-            Assert.IsTrue(e1->MaterialType == e2->Sym->MaterialType && e1->Sym->MaterialType == e2->MaterialType, 
-                $"e1 (yellow): {e1->MaterialType}, e2 (green): {e2->MaterialType}, e1->Sym (red): {e1->Sym->MaterialType}, e2->Sym (blue): {e2->Sym->MaterialType}");
+            Assert.IsTrue(e1->TriangleMaterial == e2->Sym->TriangleMaterial && e1->Sym->TriangleMaterial == e2->TriangleMaterial, 
+                $"e1 (yellow): {e1->TriangleMaterial}, e2 (green): {e2->TriangleMaterial}, e1->Sym (red): {e1->Sym->TriangleMaterial}, e2->Sym (blue): {e2->Sym->TriangleMaterial}");
 
-            if (!(e1->MaterialType == e2->Sym->MaterialType && e1->Sym->MaterialType == e2->MaterialType)) {
+            if (!(e1->TriangleMaterial == e2->Sym->TriangleMaterial && e1->Sym->TriangleMaterial == e2->TriangleMaterial)) {
                 // CommonLib.DebugSeg(e1->Org->Point3D, e1->Dest->Point3D, Color.yellow, 0.01f, math.INFINITY, 0.035f);
                 // CommonLib.DebugSeg(e1->Sym->Org->Point3D, e1->Sym->Dest->Point3D, Color.red, 0.01f, math.INFINITY, 0.035f);
                 // CommonLib.DebugSeg(e2->Org->Point3D, e2->Dest->Point3D, Color.green, 0.01f, math.INFINITY, 0.035f);
                 // CommonLib.DebugSeg(e2->Sym->Org->Point3D, e2->Sym->Dest->Point3D, Color.blue, 0.01f, math.INFINITY, 0.035f);
             }
 
-            byte sameMaterial1 = e1->MaterialType;
-            byte sameMaterial2 = e2->MaterialType;
-            byte minMaterial = MinMaterialType(e1->MaterialType, e2->MaterialType);
+            byte sameMaterial1 = e1->TriangleMaterial;
+            byte sameMaterial2 = e2->TriangleMaterial;
+            byte minMaterial = MinMaterial(e1->TriangleMaterial, e2->TriangleMaterial);
             Edge* sameMajorEdge = e1->MajorEdge;
             Edge.Type sameEdgeType = e1->EdgeType;
             var crep = GetCrep(e1->QuadEdge->Crep);
@@ -1775,17 +1782,17 @@ FoundEdgeMajor:
                 _flipStackMinor.Push(e1);
                 _flipStackMinor.Push(e2);
             }
-            SetTriangleMaterialType(e1, minMaterial); // TODO: This makes no difference as FlipQuad->Swap will assert materials different anyways, so remove minMaterial 
-            SetTriangleMaterialType(e2, minMaterial);
-            SetTriangleMaterialType(e1->Sym, minMaterial);
-            SetTriangleMaterialType(e2->Sym, minMaterial);
+            SetTriangleMaterial(e1, minMaterial); // TODO: This makes no difference as FlipQuad->Swap will assert materials different anyways, so remove minMaterial 
+            SetTriangleMaterial(e2, minMaterial);
+            SetTriangleMaterial(e1->Sym, minMaterial);
+            SetTriangleMaterial(e2->Sym, minMaterial);
 
             Edge.VerifyEdge(e1, isMajor);
             Edge.VerifyEdge(e2, isMajor);
             FlipQuad(isMajor); // First satisfy the delaunay of collinear edges then remove the vertex and retriangulate, and finally reinsert the constraint
             
             var face1 = RemoveVertex(v, isMajor); // e1 and e2 may have been flipped away from v and therefore not removed
-            face1->MaterialType = minMaterial;
+            face1->TriangleMaterial = minMaterial;
             // Debug.Assert(face1->MaterialType == minMaterial, $"face1->MaterialType: {face1->MaterialType}, minMaterial: {minMaterial}");
             RetriangulateFace(face1, isMajor);
 
@@ -1806,11 +1813,11 @@ FoundEdgeMajor:
                 }
                 c->QuadEdge->Crep = crep;
 
-                BFSEdgesSetMaterialType(c, material1 /* 2 */, Entity.Null);
-                BFSEdgesSetMaterialType(c->Sym, material2 /* 4 */, Entity.Null);
-
                 ResetClearance(c);
                 OverwriteEdgeType(c, newConstraintEdgeType, majorEdge);
+
+                BFSEdgesSetMaterialType(c, material1, Entity.Null); // TODO: These two were above ResetClearance before, make sure its ok below too
+                BFSEdgesSetMaterialType(c->Sym, material2, Entity.Null);
                 return;
             }
 
@@ -1845,8 +1852,8 @@ FoundEdgeMajor:
             c = Connect(a, b, crep, newConstraintEdgeType, majorEdge);
 
             // TODO: If materials are equivalent then maybe don't need to do this
-            BFSEdgesSetMaterialType(c, material1 /* 2 */, Entity.Null); // If the first Connect is hit, this will still work because it will stop at the constraint
-            BFSEdgesSetMaterialType(c->Sym, material2 /* 4 */, Entity.Null);
+            BFSEdgesSetMaterialType(c, material1, Entity.Null); // If the first Connect is hit, this will still work because it will stop at the constraint
+            BFSEdgesSetMaterialType(c->Sym, material2, Entity.Null);
         }
 
         void FlipQuad(bool isMajor)
@@ -1984,13 +1991,13 @@ FoundEdgeMajor:
             e->LNext->TriangleId = tid;
             e->LPrev->TriangleId = tid;
 
-            SetTriangleMaterialType(e, materialType);
+            SetTriangleMaterial(e, materialType);
         }
 
-        void SetTriangleMaterialType(Edge* e, byte materialType) {
-            e->MaterialType = materialType;
-            e->LNext->MaterialType = materialType;
-            e->LPrev->MaterialType = materialType;
+        void SetTriangleMaterial(Edge* e, byte materialType) {
+            e->TriangleMaterial = materialType;
+            e->LNext->TriangleMaterial = materialType;
+            e->LPrev->TriangleMaterial = materialType;
         }
     }
 }

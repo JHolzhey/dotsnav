@@ -1,8 +1,8 @@
-﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Mathematics;
+using Debug = UnityEngine.Debug;
 
 namespace DotsNav.Navmesh
 {
@@ -37,11 +37,15 @@ namespace DotsNav.Navmesh
         }
 
         public unsafe void VerifyMajorEdge() {
-            UnityEngine.Debug.Assert(MathLib.LogicalIf(math.length(Edge0.SegVector) > 0.1f, MathLib.IsParallel(Edge0.SegVector.XOY(), _majorEdge->SegVector.XOY(), 0.001f)),
+            Debug.Assert(MathLib.LogicalIf(math.length(Edge0.SegVector) > 0.1f, MathLib.IsParallel(Edge0.SegVector.XOY(), _majorEdge->SegVector.XOY(), 0.001f)),
                 $"Major edge is not parallel, edgeLength: {math.length(Edge0.SegVector)}");
 
-            UnityEngine.Debug.Assert(MathLib.IsSameDir(Edge0.SegVector, _majorEdge->SegVector));
-            UnityEngine.Debug.Assert(MathLib.IsSameDir(Edge0.Sym->SegVector, _majorEdge->Sym->SegVector));
+#if UNITY_ASSERTIONS
+            if (!Edge0.IsMajorEdgeOverwritten) {
+                Debug.Assert(MathLib.IsSameDir(Edge0.SegVector, _majorEdge->SegVector));
+                Debug.Assert(MathLib.IsSameDir(Edge0.Sym->SegVector, _majorEdge->Sym->SegVector));
+            }
+#endif
 
             Debug.Assert(!Edge.IsEdgeTypeMajor(Edge0.EdgeType) && Edge.IsEdgeTypeMajor(_majorEdge->EdgeType), $"Edge0.EdgeType: {Edge0.EdgeType}, _majorEdge->EdgeType: {_majorEdge->EdgeType}");
             Debug.Assert((Edge0.EdgeType & ~Edge.Type.Minor) == (_majorEdge->EdgeType & ~Edge.Type.Major), $"Edge0.EdgeType: {Edge0.EdgeType}, _majorEdge->EdgeType: {_majorEdge->EdgeType}");

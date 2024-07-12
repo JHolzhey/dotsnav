@@ -1,7 +1,7 @@
-using System.Diagnostics;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities.UniversalDelegates;
 using Unity.Mathematics;
+using Debug = UnityEngine.Debug;
 
 namespace DotsNav.Navmesh
 {

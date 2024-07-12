@@ -26,14 +26,14 @@ public struct Plane : IComponentData, IGeometry
     public readonly float SlopeAngle => MathLib.PlaneSlopeAngle(normal);
 
     public Plane(float3 normal, float3 arbitraryPointOnPlane) : this(normal, MathLib.CalcPlaneDistance(normal, arbitraryPointOnPlane)) {}
-    public Plane(float3 normal, float distance) {
-        this.normal = normal;
-        this.distance = distance;
+    public Plane(float3 normal, float distance) : this() {
+        Update(normal, distance);
     }
 
     public void Update(float3 normal, float distance) {
         this.normal = normal;
         this.distance = distance;
+        Debug.Assert(MathLib.IsNormalized(normal), $"normal: {normal}");
     }
 
     public bool IsRayCollide(float3 origin, float3 direction, float length, out float distanceAlongRay, out float3 nearestPointToPlane, float planeOffset = 0f) {
@@ -54,6 +54,14 @@ public struct Plane : IComponentData, IGeometry
 
     public float SampleElevation(float3 positionXZ) => MathLib.SamplePlaneElevation(positionXZ, normal, distance);
     public float SampleElevation(float2 position) => MathLib.SamplePlaneElevation(position.XOY(), normal, distance);
+
+    public float CalcWalkingSlopeCost() { // Assumes the plane is not vertical
+        Debug.Assert(!IsVertical, $"normal: {normal}");
+        return 1f / MathLib.Cube(normal.y);
+    }
+    public float CalcWalkingSlopeCostSafe() {
+        return (normal.y > 0f) ? CalcWalkingSlopeCost() : float.MaxValue;
+    }
 
     public bool IsValid() => normal.IsPhysicallyValid() && distance.IsPhysicallyValid();
 }

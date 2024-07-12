@@ -1,4 +1,4 @@
-using DotsNav.Core.Hybrid;
+using DotsNav;
 using DotsNav.Hybrid;
 using DotsNav.PathFinding.Hybrid;
 using UnityEngine;
@@ -8,7 +8,7 @@ class HybridTest : MonoBehaviour
     public DotsNavRunner UpdateMode;
     public DotsNavPlane Plane;
     public DotsNavPathFindingAgent Agent;
-    ObstacleOrTerrainReference _id;
+    ConstraintReference _id;
     public DotsNavObstacle ObstaclePrefab;
 
     void Update()

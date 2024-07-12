@@ -9,7 +9,7 @@ namespace DotsNav.Navmesh
         {
             if (!Edge.IsEdgeTypeMajor(s->EdgeType)) {
                 UnityEngine.Debug.Log("Minor edge ResetClearance");
-                return;
+                // return; // TODO: Delete this if statement and allow MinorEdges to be Reset
             }
             var perp = Math.PerpCcw(s->Dest->Point - s->Org->Point);
             var o = s->Org->Point;
@@ -22,20 +22,22 @@ namespace DotsNav.Navmesh
         {
             var rhs = t->LPrev;
             var lhs = t->LNext->Sym;
+            bool rhsIsObstacle = rhs->MainEdgeType == Edge.Type.Obstacle;
+            bool lhsIsObstacle = lhs->MainEdgeType == Edge.Type.Obstacle;
             var a = rhs->Dest->Point;
             var b = rhs->Org->Point;
             var c = lhs->Dest->Point;
             var f = Math.ProjectSeg2(o, d, b, out var bi);
 
             if (f >= 0 && f <= 1 &&
-                !lhs->IsConstrained && !rhs->IsConstrained &&
+                !lhsIsObstacle && !rhsIsObstacle &&
                 math.lengthsq(bi - b) < math.min(math.lengthsq(a - b), math.lengthsq(c - b)))
             {
                 lhs->ClearanceLeft = -1;
                 rhs->ClearanceRight = -1;
             }
 
-            if (f >= 0 && !rhs->IsConstrained)
+            if (f >= 0 && !rhsIsObstacle)
             {
                 var r = Math.IntersectLineSegClamped(o, o + perp, b, (a + b) / 2);
                 Math.ProjectSeg2(o, d, r, out var ri);
@@ -43,7 +45,7 @@ namespace DotsNav.Navmesh
                     ResetClearance(o, d, rhs->Sym, perp);
             }
 
-            if (f <= 1 && !lhs->IsConstrained)
+            if (f <= 1 && !lhsIsObstacle)
             {
                 var l = Math.IntersectLineSegClamped(d, d + perp, b, (c + b) / 2);
                 Math.ProjectSeg2(o, d, l, out var li);
@@ -52,28 +54,8 @@ namespace DotsNav.Navmesh
             }
         }
 
-        internal void CheckEdgeForDisturbances(Edge* edge, NativeList<Disturbance> disturbances)
-        {
-            if (!edge->ONext->IsConstrained && !edge->DNext->IsConstrained)
-            {
-                var a = edge->ONext->Dest->Point;
-                var b = edge->Org->Point;
-                var c = edge->Dest->Point;
-                if (CheckTraversal(a, b, c, edge, false, out var disturbance))
-                    disturbances.Add(disturbance);
-            }
 
-            if (!edge->OPrev->IsConstrained && !edge->DPrev->IsConstrained)
-            {
-                var a = edge->OPrev->Dest->Point;
-                var b = edge->Org->Point;
-                var c = edge->Dest->Point;
-                if (CheckTraversal(a, b, c, edge, true, out var disturbance))
-                    disturbances.Add(disturbance);
-            }
-        }
-
-        // Will return 0 if edge is constrained
+        // Will return 0 if edge is constrained - TODO: I don't think this is true, verify it
         internal static float GetLocalClearance(double2 a, double2 b, double2 c, Edge* edge)
         {
             var lba = math.lengthsq(a - b);
@@ -555,6 +537,27 @@ namespace DotsNav.Navmesh
             for (int i = 0; i < disturbances.Length; i++)
                 V.TryAdd((IntPtr) disturbances[i].Vertex);
             LocalRefinement();
+        }
+
+        internal void CheckEdgeForDisturbances(Edge* edge, NativeList<Disturbance> disturbances)
+        {
+            if (!edge->ONext->IsConstrained && !edge->DNext->IsConstrained)
+            {
+                var a = edge->ONext->Dest->Point;
+                var b = edge->Org->Point;
+                var c = edge->Dest->Point;
+                if (CheckTraversal(a, b, c, edge, false, out var disturbance))
+                    disturbances.Add(disturbance);
+            }
+
+            if (!edge->OPrev->IsConstrained && !edge->DPrev->IsConstrained)
+            {
+                var a = edge->OPrev->Dest->Point;
+                var b = edge->Org->Point;
+                var c = edge->Dest->Point;
+                if (CheckTraversal(a, b, c, edge, true, out var disturbance))
+                    disturbances.Add(disturbance);
+            }
         }
     }
 }

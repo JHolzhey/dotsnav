@@ -281,12 +281,12 @@ namespace DotsNav.Navmesh.Systems
                     var navmesh = data.Value.Navmesh;
                     
                     if (data.Value.Empty) {
-                        // navmesh->GlobalRefine();
+                        navmesh->GlobalRefine();
                     } else {
-                        // navmesh->LocalRefinement();
+                        navmesh->LocalRefinement();
                     }
 
-                    UnityEngine.Debug.Log($"InsetMajorInMinor; numMajorInMinorInsertions: {numMajorInMinorInsertions}, AddedOrModifiedMajorEdges.Length: {navmesh->AddedOrModifiedMajorEdges.Length}, OKUUUURRRRRRRRRRRRRRRRRRR");
+                    UnityEngine.Debug.Log($"InsetMajorInMinor; numMajorInMinorInsertions: {numMajorInMinorInsertions}, AddedOrModifiedMajorEdges.Length: {navmesh->AddedOrModifiedMajorEdges.Length}, OKUUUURRRRRRRRRRRRRRRRRRRRRRRRRRRRR");
                     foreach (IntPtr edge in navmesh->AddedOrModifiedMajorEdges) {
                         navmesh->InsertMajorInMinor((Edge*)edge);
                         numMajorInMinorInsertions++;
@@ -512,7 +512,7 @@ namespace DotsNav.Navmesh.Systems
         }
 
         // [BurstDiscard]
-        struct PostJob : IJob // TODO: 
+        struct PostJob : IJob // TODO: Split this into Post and Destroyed, because Destroyed needs to happen after all Terrain
         {
             public NativeReference<JobData> Data;
             [NativeDisableContainerSafetyRestriction]
@@ -523,9 +523,9 @@ namespace DotsNav.Navmesh.Systems
                 var navmesh = Data.Value.Navmesh;
                 
                 if (Data.Value.Empty) {
-                    // navmesh->GlobalRefine();
+                    navmesh->GlobalRefine();
                 } else {
-                    // navmesh->LocalRefinement();
+                    navmesh->LocalRefinement();
                 }
 
                 UnityEngine.Debug.Log("OKURRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR");

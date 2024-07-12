@@ -1,12 +1,11 @@
 using System;
-using System.Diagnostics;
 using DotsNav.Collections;
 using DotsNav.Navmesh.Data;
-using Unity.Burst.Intrinsics;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Mathematics;
+using UnityEngine;
 
 namespace DotsNav.Navmesh
 {
@@ -122,25 +121,25 @@ namespace DotsNav.Navmesh
             // component.MaterialTypes.Add(default);
             // for (int i = component.MaterialTypes.Length - 1; i > 0; i--) { // Inserting into the start so that Index of 0 is Default // TODO: Use Insert Extension
             //     component.MaterialTypes[i] = component.MaterialTypes[i - 1];
-            //     UnityEngine.Debug.Log($"i: {i}, materialTypeIndex: {i - 1}, Material Color: {component.MaterialTypes[i - 1].color}");
+            //     Debug.Log($"i: {i}, materialTypeIndex: {i - 1}, Material Color: {component.MaterialTypes[i - 1].color}");
             // }
-            // component.MaterialTypes[0] = new NavmeshMaterialType("Default", 1f, UnityEngine.Color.gray);
+            // component.MaterialTypes[0] = new NavmeshMaterialType("Default", 1f, Color.gray);
 
             // for (int i = 0; i < component.MaterialTypes.Length; i++) {
-            //     UnityEngine.Debug.Log($"i: {i}, Material Color: {component.MaterialTypes[i].color}");
+            //     Debug.Log($"i: {i}, Material Color: {component.MaterialTypes[i].color}");
             // }
 
             _mark = default;
             _edgeId = default;
             _triangleId = default;
 
-            BuildBoundingBoxes(component.TerrainMesh);
+            BuildTerrainAndBoundingBoxes(component.TerrainMesh);
         }
 
-        public static byte MinMaterialType(byte material1, byte material2) { return material1 < material2 ? material1 : material2; }
-        public static byte MaxMaterialType(byte material1, byte material2) { return material1 > material2 ? material1 : material2; }
+        public static byte MinMaterial(byte material1, byte material2) => material1 < material2 ? material1 : material2;
+        public static byte MaxMaterial(byte material1, byte material2) => material1 > material2 ? material1 : material2;
 
-        void BuildBoundingBoxes(TerrainMesh terrainMesh)
+        void BuildTerrainAndBoundingBoxes(TerrainMesh terrainMesh)
         {
             // Setup and Initialize Navmesh bounds, must do it manually because Insert will not work with an empty plane
             var bmin = -Extent - 1;
@@ -187,6 +186,7 @@ namespace DotsNav.Navmesh
 
             Connect(rightMinor, bottomMinor, Edge.Type.Minor | Edge.Type.Ignore, null);
             
+            // First build the terrain, then the bounding box
             PlanePoint* tri = stackalloc PlanePoint[4];
             for (int i = 0; i < terrainMesh.SlopeTriangles.Length; i++) {
                 int3 slopeTriangle = terrainMesh.SlopeTriangles[i];
@@ -194,8 +194,8 @@ namespace DotsNav.Navmesh
                     || !Contains(terrainMesh.SlopePoints[slopeTriangle.y].xz)
                     || !Contains(terrainMesh.SlopePoints[slopeTriangle.z].xz))
                 {
-                    UnityEngine.Debug.LogError("Terrain point is not in Navmesh");
-                    CommonLib.CreatePrimitive(UnityEngine.PrimitiveType.Sphere, terrainMesh.SlopePoints[slopeTriangle.x], new float3(1f), UnityEngine.Color.red);
+                    Debug.LogError("Terrain point is not in Navmesh");
+                    CommonLib.CreatePrimitive(PrimitiveType.Sphere, terrainMesh.SlopePoints[slopeTriangle.x], new float3(1f), Color.red);
                     continue;
                 }
 
@@ -209,12 +209,12 @@ namespace DotsNav.Navmesh
 
             AddedOrModifiedMajorEdges.Clear();
 
-            UnityEngine.Debug.Log($"Starting insert: =======================================================================================");
+            Debug.Log($"Starting insert: =======================================================================================");
 
             PlanePoint* bounds = stackalloc PlanePoint[] {-Extent, new float2(Extent.x, -Extent.y), Extent, new float2(-Extent.x, Extent.y), -Extent};
             InsertMajor(new Span<PlanePoint>(bounds, 5), Entity.Null, float4x4.identity, Edge.Type.Obstacle);
 
-            UnityEngine.Debug.Log($"_modifiedMajorEdges.Length: {AddedOrModifiedMajorEdges.Length} =======================================================================================");
+            Debug.Log($"_modifiedMajorEdges.Length: {AddedOrModifiedMajorEdges.Length} =======================================================================================");
             foreach (IntPtr e in AddedOrModifiedMajorEdges) {
                 Edge* edge = (Edge*)e;
                 if (Contains(edge->Org->Point) && Contains(edge->Dest->Point)) {

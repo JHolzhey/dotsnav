@@ -17,18 +17,15 @@ namespace DotsNav.Navmesh.Systems
     [UpdateInGroup(typeof(DotsNavDrawingSystemGroup))]
     partial class DrawNavmeshSystem : SystemBase
     {
-        int numDebugTris = 5000;
-        GameObject[] debugTris;
-        NativeList<Pair<Triangle, Color>> outputTriangles;
-        NativeHashSet<int> closedMinorTriangles;
+        const int numDebugTris = 5000;
+        GameObject[] debugTris = new GameObject[numDebugTris];
+        int prevOutputTrianglesLength = 0;
+        NativeList<Pair<Ptr<Edge>, float4>> outputTriangles = new NativeList<Pair<Ptr<Edge>, float4>>(10, Allocator.Persistent);
+        NativeHashSet<int> closedMinorTriangles = new NativeHashSet<int>(10, Allocator.Persistent);
 
         [BurstDiscard]
         protected override void OnCreate()
         {
-            outputTriangles = new NativeList<Pair<Triangle, Color>>(10, Allocator.Persistent);
-            closedMinorTriangles = new NativeHashSet<int>(10, Allocator.Persistent);
-
-            debugTris = new GameObject[numDebugTris];
             for (int i = 0; i < debugTris.Length; i++) { debugTris[i] = CommonLib.CreatePrimitive(PrimitiveType.Quad, float3.zero, new float3(1f), default); }
         }
 
@@ -40,14 +37,18 @@ namespace DotsNav.Navmesh.Systems
         {
             CheckedStateRef.Dependency.Complete();
 
-            for (int i = 0; i < outputTriangles.Length; i++) {
-                debugTris[i].transform.position = float3.zero;
-                CommonLib.DebugTriangle(debugTris[i], outputTriangles[i].first, outputTriangles[i].second);
-            }
-            for (int i = outputTriangles.Length; i < numDebugTris; i++) {
-                debugTris[i].transform.position = new float3(1000f);
+            if (outputTriangles.Length != prevOutputTrianglesLength) unsafe {
+                for (int i = 0; i < outputTriangles.Length; i++) {
+                    debugTris[i].transform.position = float3.zero;
+                    Triangle tri = outputTriangles[i].first.p->FaceTriangle();
+                    CommonLib.DebugTriangle(debugTris[i], tri, (outputTriangles[i].second * (1f / -tri.Plane.CalcWalkingSlopeCost())).ToColor());
+                }
+                for (int i = outputTriangles.Length; i < numDebugTris; i++) {
+                    debugTris[i].transform.position = new float3(1000f);
+                }
             }
 
+            prevOutputTrianglesLength = outputTriangles.Length;
             outputTriangles.Clear();
             closedMinorTriangles.Clear();
 
@@ -70,15 +71,15 @@ namespace DotsNav.Navmesh.Systems
         {
             Triangle tri = edge->FaceTriangle().RoughInset(0.1f);
 
-            lines.Add(new Line(tri.p0, tri.p1, materialTypes[edge->MaterialType].color));
-            lines.Add(new Line(tri.p1, tri.p2, materialTypes[edge->LPrev->MaterialType].color));
-            lines.Add(new Line(tri.p2, tri.p0, materialTypes[edge->LNext->MaterialType].color));
+            lines.Add(new Line(tri.p0, tri.p1, materialTypes[edge->TriangleMaterial].color));
+            lines.Add(new Line(tri.p1, tri.p2, materialTypes[edge->LPrev->TriangleMaterial].color));
+            lines.Add(new Line(tri.p2, tri.p0, materialTypes[edge->LNext->TriangleMaterial].color));
         }
 
         //[BurstCompile]
         unsafe partial struct DrawNavmeshJob : IJobEntity
         {
-            public NativeList<Pair<Triangle, Color>> outputMinorTriangles;
+            public NativeList<Pair<Ptr<Edge>, float4>> outputMinorTriangles;
             public NativeHashSet<int> closedMinorTriangles;
 
             [BurstDiscard]
@@ -109,23 +110,29 @@ namespace DotsNav.Navmesh.Systems
 
                     Debug.Assert(!Edge.IsEdgeTypeMajor(edge->EdgeType), $"edge->EdgeType: {edge->EdgeType}");
 
+                    if (!(edge->TriangleId == edge->LNext->TriangleId && edge->LNext->TriangleId == edge->LPrev->TriangleId)) {
+                        Debug.Assert(false, $"Unequal TriangleId, edge = {edge->TriangleId}, edge->LNext = {edge->LNext->TriangleId}, edge->LPrev = {edge->LPrev->TriangleId}");
+                    }
+                    if (!(edge->Sym->TriangleId == edge->Sym->LNext->TriangleId && edge->Sym->LNext->TriangleId == edge->Sym->LPrev->TriangleId)) {
+                        Debug.Assert(false, $"Unequal TriangleId, edge->Sym = {edge->Sym->TriangleId}, edge->Sym->LNext = {edge->Sym->LNext->TriangleId}, edge->Sym->LPrev = {edge->Sym->LPrev->TriangleId}");
+                    }
 
-                    if (!(edge->MaterialType == edge->LNext->MaterialType && edge->LNext->MaterialType == edge->LPrev->MaterialType)) {
-                        Debug.Assert(false, $"Unequal tri material, edge = {edge->MaterialType}, edge->LNext = {edge->LNext->MaterialType}, edge->LPrev = {edge->LPrev->MaterialType}");
+                    if (!(edge->TriangleMaterial == edge->LNext->TriangleMaterial && edge->LNext->TriangleMaterial == edge->LPrev->TriangleMaterial)) {
+                        Debug.Assert(false, $"Unequal tri material, edge = {edge->TriangleMaterial}, edge->LNext = {edge->LNext->TriangleMaterial}, edge->LPrev = {edge->LPrev->TriangleMaterial}");
                         DrawEdgeTriangle(ref lines, edge, navmesh.Navmesh->MaterialTypes);
                     }
-                    if (!(edge->Sym->MaterialType == edge->Sym->LNext->MaterialType && edge->Sym->LNext->MaterialType == edge->Sym->LPrev->MaterialType)) {
-                        Debug.Assert(false, $"Unequal tri material, edge->Sym = {edge->Sym->MaterialType}, edge->Sym->LNext = {edge->Sym->LNext->MaterialType}, edge->Sym->LPrev = {edge->Sym->LPrev->MaterialType}");
+                    if (!(edge->Sym->TriangleMaterial == edge->Sym->LNext->TriangleMaterial && edge->Sym->LNext->TriangleMaterial == edge->Sym->LPrev->TriangleMaterial)) {
+                        Debug.Assert(false, $"Unequal tri material, edge->Sym = {edge->Sym->TriangleMaterial}, edge->Sym->LNext = {edge->Sym->LNext->TriangleMaterial}, edge->Sym->LPrev = {edge->Sym->LPrev->TriangleMaterial}");
                         DrawEdgeTriangle(ref lines, edge->Sym, navmesh.Navmesh->MaterialTypes);
                     }
 
                     if (!closedMinorTriangles.Contains(edge->TriangleId)) {
                         closedMinorTriangles.Add(edge->TriangleId);
-                        outputMinorTriangles.Add(new Pair<Triangle, Color>(edge->FaceTriangle(), navmesh.Navmesh->MaterialTypes[edge->MaterialType].color));
+                        outputMinorTriangles.Add(new (edge, navmesh.Navmesh->MaterialTypes[edge->TriangleMaterial].color.ToFloat4()));
                     }
                     if (!closedMinorTriangles.Contains(edge->Sym->TriangleId)) {
                         closedMinorTriangles.Add(edge->Sym->TriangleId);
-                        outputMinorTriangles.Add(new Pair<Triangle, Color>(edge->Sym->FaceTriangle(), navmesh.Navmesh->MaterialTypes[edge->Sym->MaterialType].color));
+                        outputMinorTriangles.Add(new (edge->Sym, navmesh.Navmesh->MaterialTypes[edge->Sym->TriangleMaterial].color.ToFloat4()));
                     }
 
 
@@ -143,8 +150,8 @@ namespace DotsNav.Navmesh.Systems
                     Debug.Assert(!MathLib.IsZero(b - a));
                     float3 direction = math.normalizesafe(b - a);
                     float3 tangent = MathLib.CalcTangentToNormal(direction);
-                    float3 leftOffset = 0.005f * MathLib.CalcTangentToNormal(direction);
-                    lines.Add(new Line(a + leftOffset + direction*0.005f, b + leftOffset - direction*0.005f, c));
+                    float3 leftOffset = 0.0005f * tangent * (edge->HasMajorEdge ? 1f : 0);
+                    lines.Add(new Line(a + leftOffset + direction*0.001f, b + leftOffset - direction*0.001f, c));
 
 
                     // Asserting Major Edges:
@@ -163,9 +170,13 @@ namespace DotsNav.Navmesh.Systems
                         // If dot too large draw line between and midpoints
                         if (!MathLib.LogicalIf(edgeLength > 0.1f, MathLib.IsEpsEqual(dot, 0f, 0.001f))) { // this 0.02f check is here because very small edges can rightfully be unaligned
                             Debug.Assert(MathLib.IsEpsEqual(dot, 0.005f, 0.001f), $"dot: {dot}, edge length: {edgeLength}");
-                            lines.Add(new Line(minorMidpoint, majorMidpoint, Color.white));
-                            DrawPoint(ref lines, minorMidpoint.xz, Color.white, 0.03f);
-                            DrawPoint(ref lines, majorMidpoint.xz, Color.grey, 0.03f);
+                            // lines.Add(new Line(minorMidpoint, majorMidpoint, Color.white));
+                            // DrawPoint(ref lines, minorMidpoint.xz, Color.white, 0.03f);
+                            // DrawPoint(ref lines, majorMidpoint.xz, Color.grey, 0.03f);
+                            lines.Add(new Line(a + leftOffset*1.1f + direction*0.005f, b + leftOffset*1.1f - direction*0.005f, c));
+                            lines.Add(new Line(a + leftOffset*1.2f + direction*0.005f, b + leftOffset*1.2f - direction*0.005f, c));
+                            lines.Add(new Line(a + leftOffset*0.9f + direction*0.005f, b + leftOffset*1.3f - direction*0.005f, c));
+                            lines.Add(new Line(a + leftOffset*0.9f + direction*0.005f, b + leftOffset*1.4f - direction*0.005f, c));
                         }
                     }
 
@@ -215,7 +226,7 @@ namespace DotsNav.Navmesh.Systems
                     var b = math.transform(ltw.Value, edge->Dest->Point.ToXxY());
 
                     float3 direction = math.normalizesafe(b - a);
-                    lines.Add(new Line(a + direction*0.005f, b + direction*0.005f, c));
+                    lines.Add(new Line(a + direction*0.001f, b - direction*0.001f, c));
 
                     if (false) {
                         if (edge->DebugRawClearanceLeft != -1) {

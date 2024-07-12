@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using DotsNav.CollisionDetection.Hybrid;
-using DotsNav.Core.Hybrid;
+using DotsNav;
 using DotsNav.Drawing;
 using DotsNav.Hybrid;
 using DotsNav.Navmesh.Hybrid;
@@ -30,7 +30,7 @@ class SandboxDev : MonoBehaviour
     public bool Reverse;
 
     readonly List<List<Vector2>> _points = new() {new List<Vector2>()};
-    readonly List<ObstacleOrTerrainReference> _obstacles = new();
+    readonly List<ConstraintReference> _obstacles = new();
 
     int _constraint;
     Vector2 _scrollPos;

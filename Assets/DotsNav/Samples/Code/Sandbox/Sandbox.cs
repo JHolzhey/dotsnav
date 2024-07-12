@@ -32,7 +32,7 @@ namespace DotsNav.Samples.Code
         public Color CastColor = Color.white;
 
         readonly List<List<Vector2>> _points = new() {new List<Vector2>()};
-        readonly List<ObstacleOrTerrainReference> _obstacles = new();
+        readonly List<ConstraintReference> _obstacles = new();
 
         GameObject _target;
         int _placingPrefab = -1;

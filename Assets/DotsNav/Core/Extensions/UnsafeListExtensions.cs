@@ -68,5 +68,25 @@ namespace DotsNav
                     return true;
             return false;
         }
+
+        public static int IndexOf<T>(this UnsafeList<T> list, T value) where T : unmanaged, IEquatable<T>
+        {
+            for (int i = 0; i < list.Length; i++)
+                if (list[i].Equals(value))
+                    return i;
+            return -1;
+        }
+
+        public static bool TryIndexOf<T>(this UnsafeList<T> list, T value, out int indexOf) where T : unmanaged, IEquatable<T>
+        {
+            for (int i = 0; i < list.Length; i++) {
+                if (list[i].Equals(value)) {
+                    indexOf = i;
+                    return true;
+                }
+            }
+            indexOf = -1;
+            return false;
+        }
     }
 }

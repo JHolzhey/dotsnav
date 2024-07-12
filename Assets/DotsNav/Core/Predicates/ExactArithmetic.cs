@@ -61,46 +61,6 @@ using UnityEditor.Experimental.GraphView;
 
 namespace DotsNav
 {
-    // Regularly casted to EdgeType, 
-    public enum ConstraintType : byte { // TODO: Move to better file
-        None = 0,
-        Obstacle,
-        Terrain,
-        Gate,
-        Link,
-    }
-
-    // Regularly casted from ConstrainType so must follow ConstraintType order
-    // public enum EdgeType { // TODO: Move to better file
-    //     None = 0,
-    //     Obstacle = ConstraintType.Obstacle,
-    //     Terrain = ConstraintType.Terrain,
-
-    //     ConnectsToObstacle, // Now Clearance
-    //     ConnectsToTerrain, // Now TerrainConnector
-
-    //     ConnectsToTerrainWithMajorConnectsToObstacle,
-    //     ConnectsToObstacleWithMinorTerrainConnects,
-    // }
-
-    public static class DebugColors {
-        
-        // public static readonly UnityEngine.Color[] EdgeColors = new UnityEngine.Color[] {
-        //     UnityEngine.Color.black,
-
-        //     UnityEngine.Color.red,
-        //     UnityEngine.Color.green,
-
-        //     UnityEngine.Color.black,
-
-        //     UnityEngine.Color.magenta,
-        //     UnityEngine.Color.cyan,
-
-        //     UnityEngine.Color.blue,
-        //     UnityEngine.Color.yellow,
-        // };
-    }
-
     /// <summary>
     /// Implements the exact floating-point described by Shewchuck, and implemented in predicates.c
     /// </summary>

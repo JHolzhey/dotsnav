@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using DotsNav.Data;
 using DotsNav.Navmesh.Data;
 using DotsNav.Navmesh.Systems;
@@ -8,7 +7,6 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
-using Unity.Entities.UniversalDelegates;
 using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -65,7 +63,7 @@ namespace DotsNav.PathFinding.Systems
                         writer.Enqueue(entity);
 
                 })
-                .Run();
+                .ScheduleParallel();
 
             Job
                 .WithCode(() =>
@@ -74,12 +72,11 @@ namespace DotsNav.PathFinding.Systems
                     while (queue.TryDequeue(out var e))
                         buffer.Add(e);
                 })
-                .Run();
+                .Schedule();
 
-
-            /* Dependency =  */new FindPathJob
+            Dependency = new FindPathJob
                 {
-                    Agents = buffer.AsArray(),
+                    Agents = buffer.AsDeferredJobArray(),
                     NavmeshElements = GetComponentLookup<NavmeshAgentComponent>(true),
                     Navmeshes = GetComponentLookup<NavmeshComponent>(true),
                     LTWLookup = GetComponentLookup<LocalToWorld>(true),
@@ -89,13 +86,13 @@ namespace DotsNav.PathFinding.Systems
                     PathSegments = GetBufferLookup<PathSegmentElement>(),
                     TriangleIds = GetBufferLookup<TriangleElement>(),
                     PathFinder = resources,
-                }.Execute();
-                // .Run(/* buffer, 1, Dependency */);
+                }
+                .Schedule(buffer, 1, Dependency);
         }
 
 
-
-        struct FindPathJob : IJob //ParallelForDefer
+        [BurstCompile]
+        struct FindPathJob : IJobParallelForDefer
         {
             [ReadOnly]
             public NativeArray<Entity> Agents;
@@ -121,27 +118,25 @@ namespace DotsNav.PathFinding.Systems
             [ReadOnly]
             public ComponentLookup<LocalTransform> TranslationLookup;
 
-            public unsafe void Execute(/* int index */)
+            public unsafe void Execute(int index)
             {
-                for (int index = 0; index < Agents.Length; index++) {
-                    // Assert.IsTrue(_threadId > 0 && _threadId <= PathFinder.Instances.Length);
-                    var agent = Agents[index];
-                    var query = Queries[agent];
-                    var segments = PathSegments[agent];
-                    segments.Clear();
-                    var ids = TriangleIds[agent];
-                    ids.Clear();
-                    var instanceIndex = _threadId - 1;
-                    var instance = PathFinder.Instances[0];
+                Assert.IsTrue(_threadId > 0 && _threadId <= PathFinder.Instances.Length);
+                var agent = Agents[index];
+                var query = Queries[agent];
+                var segments = PathSegments[agent];
+                segments.Clear();
+                var ids = TriangleIds[agent];
+                ids.Clear();
+                var instanceIndex = _threadId - 1;
+                var instance = PathFinder.Instances[instanceIndex];
 
-                    var navmeshEntity = NavmeshElements[agent].Navmesh;
-                    var ltw = math.inverse(LTWLookup[navmeshEntity].Value);
-                    var pos = TranslationLookup[agent];
-                    query.State = instance.FindPath(math.transform(ltw, pos.Position).xz, math.transform(ltw, query.To).xz, Radii[agent], segments, ids, Navmeshes[navmeshEntity].Navmesh, out _);
-                    if (query.State == PathQueryState.PathFound)
-                        ++query.Version;
-                    Queries[agent] = query;
-                }
+                var navmeshEntity = NavmeshElements[agent].Navmesh;
+                var ltw = math.inverse(LTWLookup[navmeshEntity].Value);
+                var pos = TranslationLookup[agent];
+                query.State = instance.FindPath(math.transform(ltw, pos.Position).xz, math.transform(ltw, query.To).xz, Radii[agent], segments, ids, Navmeshes[navmeshEntity].Navmesh, out _);
+                if (query.State == PathQueryState.PathFound)
+                    ++query.Version;
+                Queries[agent] = query;
             }
         }
 
