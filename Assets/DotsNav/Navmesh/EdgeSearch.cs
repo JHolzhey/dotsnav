@@ -23,7 +23,7 @@ namespace DotsNav.Navmesh
             // UnityEngine.Debug.Log($"Edge Search; {newConstraintEdgeType}");
 
             Assert.IsTrue(start != goal);
-            bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
+            bool isMajor = newConstraintEdgeType.IsMajor();
             Clear();
             var open = _open;
             var closed = _closed;

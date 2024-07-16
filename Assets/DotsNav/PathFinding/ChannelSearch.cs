@@ -223,10 +223,7 @@ namespace DotsNav.PathFinding
                             clearance = new ClearanceLeft().Get(currMajorEdge);
                         } else if (prevMajorEdge != null && currMajorEdge->Sym != prevMajorEdge) { // Then we are dealing with an overwritten MajorEdge edge
                             clearance = -1;
-                            Debug.LogWarning("Overwritten MajorEdge");
-// #if UNITY_ASSERTIONS
-//                             Debug.Assert(step.Edge->IsMajorEdgeOverwritten || next->IsMajorEdgeOverwritten, $"Wrong, MajorEdge was not Overwritten: {currMajorEdge == prevMajorEdge}, {currMajorEdge->ONext == prevMajorEdge}, {currMajorEdge->LNext == prevMajorEdge}, {currMajorEdge->DPrev == prevMajorEdge}, {currMajorEdge->OPrev == prevMajorEdge}, {currMajorEdge->DNext == prevMajorEdge}, {currMajorEdge->RPrev == prevMajorEdge}, {currMajorEdge->RNext == prevMajorEdge}");
-// #endif
+                            Debug.LogError($"Bad, MajorEdge was not Overwritten: {currMajorEdge == prevMajorEdge}, {currMajorEdge->ONext == prevMajorEdge}, {currMajorEdge->LNext == prevMajorEdge}, {currMajorEdge->DPrev == prevMajorEdge}, {currMajorEdge->OPrev == prevMajorEdge}, {currMajorEdge->DNext == prevMajorEdge}, {currMajorEdge->RPrev == prevMajorEdge}, {currMajorEdge->RNext == prevMajorEdge}");
                         }
                         // if (prevMajorEdge != null) { DebugDrawArrow(prevMajorEdge->Org->Point3D, prevMajorEdge->Dest->Point3D, Color.white, 0.01f); }
                         return clearance;

@@ -4,6 +4,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using System;
 using UnityEngine;
+using DotsNav.Drawing;
 
 
 namespace DotsNav.Navmesh
@@ -42,7 +43,7 @@ namespace DotsNav.Navmesh
 
         Edge* Connect(Vertex* a, Vertex* b, Edge.Type newEdgeType, Edge* majorEdge) // Connect two vertices with an edge
         {
-            bool isMajor = Edge.IsEdgeTypeMajor(newEdgeType);
+            bool isMajor = newEdgeType.IsMajor();
             Assert.IsTrue(a->GetEdge(isMajor) != null);
             Assert.IsTrue(b->GetEdge(isMajor) != null);
             return Connect(GetLeftEdge(a, b->Point, isMajor)->Sym, GetLeftEdge(b, a->Point, isMajor)->OPrev, newEdgeType, majorEdge);
@@ -60,7 +61,7 @@ namespace DotsNav.Navmesh
             Debug.Assert(e->TriangleMaterial == e->LNext->TriangleMaterial && e->LNext->TriangleMaterial == e->LPrev->TriangleMaterial, "edge Tri has unequal types");
             Debug.Assert(e->Sym->TriangleMaterial == e->Sym->LNext->TriangleMaterial && e->Sym->LNext->TriangleMaterial == e->Sym->LPrev->TriangleMaterial, "edge->Sym Tri has unequal types");
 
-            bool isMajor = Edge.IsEdgeTypeMajor(e->EdgeType);
+            bool isMajor = e->EdgeType.IsMajor();
             Edge.VerifyEdge(e, isMajor);
 
             if (isMajor) {
@@ -103,7 +104,7 @@ namespace DotsNav.Navmesh
 
         static void SetEndPoints(Edge* edge, Vertex* org, Vertex* dest, bool isMajor)
         {
-            Debug.Assert(Edge.IsEdgeTypeMajor(edge->EdgeType) == isMajor);
+            Debug.Assert(edge->EdgeType.IsMajor() == isMajor);
             SetOrg(edge, org, isMajor);
             SetOrg(edge->Sym, dest, isMajor);
         }
@@ -128,7 +129,7 @@ namespace DotsNav.Navmesh
 
                 Edge.VerifyEdge(edge, isMajor);
 
-                if (/* !e->Constrained */ !edge->IsEdgeTypeConstrained() && Math.CircumcircleContains(edge->Org->Point, edge->Dest->Point, p, edge->DNext->Org->Point))
+                if (/* !e->Constrained */ !edge->EdgeType.IsConstrained() && Math.CircumcircleContains(edge->Org->Point, edge->Dest->Point, p, edge->DNext->Org->Point))
                 {
                     flipStackUsing.Push(edge->OPrev);
                     flipStackUsing.Push(edge->DNext);
@@ -412,7 +413,7 @@ FoundEdgeMajor:
                 return closest;
             }
 
-            var e = closest->GetEdge(Edge.IsEdgeTypeMajor(newConstraintEdgeType));
+            var e = closest->GetEdge(newConstraintEdgeType.IsMajor());
             Assert.IsTrue(e != null);
             InfiniteLoopDetection.Reset();
 
@@ -472,7 +473,7 @@ FoundEdgeMajor:
         {
             //Debug.Log($"InsertPointInEdge; {newConstraintEdgeType}, debugIsNewPoint: {isInsertedPoint}");
 
-            bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
+            bool isMajor = newConstraintEdgeType.IsMajor();
             Edge.VerifyEdge(edge, isMajor);
 
             ref Collections.PtrStack<Edge> flipStackUsing = ref isMajor ? ref _flipStack : ref _flipStackMinor;
@@ -497,7 +498,7 @@ FoundEdgeMajor:
             DestroyedTriangle(edge->Sym->TriangleId);
 
 
-            Debug.Assert(isMajor == Edge.IsEdgeTypeMajor(edge->EdgeType), $"edge->EdgeType: {edge->EdgeType}, newConstraintEdgeType: {newConstraintEdgeType}");
+            Debug.Assert(isMajor == edge->EdgeType.IsMajor(), $"edge->EdgeType: {edge->EdgeType}, newConstraintEdgeType: {newConstraintEdgeType}");
             Debug.Assert(MathLib.LogicalIf(isMajor, existingMajorVertex == null), $"newConstraintEdgeType: {newConstraintEdgeType}");
             Debug.Assert(MathLib.LogicalIf(!isInsertedPoint && newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle), edge->EdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Terrain)), $"edge->EdgeType: {edge->EdgeType}");
             Debug.Assert(MathLib.LogicalIf(!isInsertedPoint && newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Terrain), newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Minor)
@@ -600,7 +601,7 @@ FoundEdgeMajor:
         {
             //Debug.Log($"InsertPointInFace; {newConstraintEdgeType}");
 
-            bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
+            bool isMajor = newConstraintEdgeType.IsMajor();
             Edge.VerifyEdge(edge, isMajor);
 
             ref Collections.PtrStack<Edge> flipStackUsing = ref isMajor ? ref _flipStack : ref _flipStackMinor;
@@ -676,7 +677,7 @@ FoundEdgeMajor:
         void InsertSegmentRecursive(Vertex* a, Vertex* b, Entity cid, float2 dir, float2 start, float2 end, Edge.Type newConstraintEdgeType, Edge* majorEdge)
         {
             //Debug.Log($"InsertSegmentRecursive; {newConstraintEdgeType}");
-            bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
+            bool isMajor = newConstraintEdgeType.IsMajor();
             _insertedPoints.Clear();
             _insertedPoints.Add(new Point {Vertex = a, P = a->Point});
 
@@ -754,7 +755,7 @@ FoundEdgeMajor:
             //Debug.Log($"GetNextPoint; {newConstraintEdgeType}");
             InfiniteLoopDetection.Reset();
 
-            bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
+            bool isMajor = newConstraintEdgeType.IsMajor();
 
             var e = GetLeftEdge(a, b->Point, isMajor);
             while (e->Dest != b)
@@ -764,7 +765,7 @@ FoundEdgeMajor:
                 var d = Math.TriArea(a->Point, b->Point, e->Dest->Point);
 
 
-                Debug.Assert(Edge.IsEdgeTypeMajor(e->EdgeType) == isMajor);
+                Debug.Assert(e->EdgeType.IsMajor() == isMajor);
                 Edge.VerifyEdge(e, isMajor);
                 if (isMajor) {
                     Debug.Assert(newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle), $"newConstraintEdgeType: {newConstraintEdgeType}, edge->EdgeType: {e->EdgeType}");
@@ -775,7 +776,7 @@ FoundEdgeMajor:
                 // Does it change anything? Improve performance?
 
 
-                if (d < 0 && e->IsEdgeTypeConstrained() /* e->Constrained */)
+                if (d < 0 && e->EdgeType.IsConstrained() /* e->Constrained */)
                 {
                     var p = (float2) Math.IntersectLineSegClamped(start, end, e->Org->Point, e->Dest->Point);
                     var pointExists = TryGetPoint(p, e, out var v);
@@ -933,7 +934,7 @@ FoundEdgeMajor:
         void InsertSegmentNoCrossConstraints(Vertex* a, Vertex* b, Entity cid, Edge.Type newConstraintEdgeType, Edge* majorEdge)
         {
             //Debug.Log($"InsertSegmentNoCrossConstraints; {newConstraintEdgeType}");
-            bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
+            bool isMajor = newConstraintEdgeType.IsMajor();
             var c = GetConnection(a, b, isMajor);
 
             if (c != null)
@@ -992,7 +993,7 @@ FoundEdgeMajor:
                     $"edge->MajorEdge: {(long)edge->MajorEdge}, majorEdge: {(long)majorEdge}, edge->MajorEdgeType: {edge->MajorEdge->EdgeType}, majorEdge->EdgeType: {majorEdge->EdgeType}");
             }
 
-            Debug.Assert(Edge.IsEdgeTypeMajor(existingEdgeType) && Edge.IsEdgeTypeMajor(newEdgeType), $"edgeType: {existingEdgeType}, newEdgeType: {newEdgeType}");
+            Debug.Assert(existingEdgeType.IsMajor() && newEdgeType.IsMajor(), $"edgeType: {existingEdgeType}, newEdgeType: {newEdgeType}");
             
             Debug.Assert(existingEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance) && newEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)
                 , $"edgeType: {existingEdgeType}, newEdgeType: {newEdgeType}");
@@ -1041,7 +1042,7 @@ FoundEdgeMajor:
                     $"edge->MajorEdge: {(long)edge->MajorEdge}, majorEdge: {(long)majorEdge}, edge->MajorEdgeType: {edge->MajorEdge->EdgeType}, majorEdge->EdgeType: {majorEdge->EdgeType}");
             }
 
-            Debug.Assert(!Edge.IsEdgeTypeMajor(existingEdgeType) && !Edge.IsEdgeTypeMajor(newEdgeType), $"edgeType: {existingEdgeType}, newEdgeType: {newEdgeType}");
+            Debug.Assert(!existingEdgeType.IsMajor() && !newEdgeType.IsMajor(), $"edgeType: {existingEdgeType}, newEdgeType: {newEdgeType}");
             
 
             Debug.Assert(existingEdgeType.HasAnyFlagsB(Edge.Type.Terrain | Edge.Type.Ignore | Edge.Type.Obstacle | Edge.Type.Clearance)
@@ -1054,12 +1055,10 @@ FoundEdgeMajor:
             // Debug.Assert(MathLib.LogicalIf(edge->IsConstrained, newEdgeType.HasAnyFlagsB(Edge.Type.Terrain | Edge.Type.Clearance | Edge.Type.Obstacle)), $"edge->EdgeType: {edge->EdgeType}, newEdgeType: {newEdgeType}");
             // Debug.Assert(MathLib.LogicalIf(newEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance | Edge.Type.Ignore), !edge->IsConstrained), $"edge->EdgeType: {edge->EdgeType}, newEdgeType: {newEdgeType}");
             
-
-            edge->SetEdgeType(newEdgeType);
-
             Debug.Assert(MathLib.LogicalIf(existingEdgeType.HasAnyFlagsB(Edge.Type.Clearance), newEdgeType.HasNoFlagsB(Edge.Type.Obstacle))
                 , $"edgeType: {existingEdgeType}, newEdgeType: {newEdgeType}, this is probably fine, clearance is often overwritten by obstacle");
 
+            edge->SetEdgeType(newEdgeType);
             edge->MajorEdge = majorEdge;
 
             Edge.VerifyEdge(edge);
@@ -1069,9 +1068,9 @@ FoundEdgeMajor:
         internal static void OverwriteEdgeType(Edge* edge, Edge.Type newConstraintEdgeType, Edge* majorEdge) {
             Edge.Type existingEdgeType = edge->EdgeType;
 
-            Debug.Assert(Edge.IsEdgeTypeMajor(existingEdgeType) == Edge.IsEdgeTypeMajor(newConstraintEdgeType), $"edgeType: {existingEdgeType}, newConstraintEdgeType: {newConstraintEdgeType}");
+            Debug.Assert(existingEdgeType.IsMajor() == newConstraintEdgeType.IsMajor(), $"edgeType: {existingEdgeType}, newConstraintEdgeType: {newConstraintEdgeType}");
             
-            if (Edge.IsEdgeTypeMajor(existingEdgeType)) {
+            if (existingEdgeType.IsMajor()) {
                 Debug.Assert(existingEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance) && newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle)
                     , $"edgeType: {existingEdgeType}, newConstraintEdgeType: {newConstraintEdgeType}");
                 Debug.Assert(MathLib.LogicalIf(existingEdgeType.HasAnyFlagsB(Edge.Type.Obstacle), newConstraintEdgeType.HasNoFlagsB(Edge.Type.Clearance))
@@ -1085,19 +1084,28 @@ FoundEdgeMajor:
                     SetEdgeTypeMinor(edge, newConstraintEdgeType, majorEdge);
                 } else if (existingEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)) {
                     // If existing type is Obstacle or Clearance, do nothing, since nothing overwrites it
-#if UNITY_ASSERTIONS
                     if (newConstraintEdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)) {
                         Debug.Assert(edge->HasMajorEdge);
-                        if (edge->HasMajorEdge && !edge->ContainsMajorEdge(majorEdge)) { // Checking to prevent null exception
+                        if (edge->HasMajorEdge && !edge->ContainsMajorEdge(majorEdge)) {
                             Debug.LogWarning($"edge's MajorEdge has been overwritten; edge->MajorEdge->EdgeType: {edge->MajorEdge->EdgeType}, edge->EdgeType: {edge->EdgeType}, newConstraintEdgeType: {newConstraintEdgeType}");
                             CommonLib.DebugSeg(edge->Org->Point3D, edge->Dest->Point3D, Color.blue, 0.001f, math.INFINITY, 0f);
-                            edge->IsMajorEdgeOverwritten = true;
+                            
+                            edge->SetOverwritten(false);
+                            Debug.Assert(!edge->EdgeType.IsOverwritten());
+
+                            edge->SetOverwritten(true);
+                            Debug.Assert(edge->EdgeType.IsOverwritten());
+
+                            edge->SetOverwritten(false);
+                            Debug.Assert(!edge->EdgeType.IsOverwritten());
+
+                            edge->SetOverwritten(true); // TODO: This is the correct one, delete the ones above
+                            Debug.Assert(edge->EdgeType.IsOverwritten());
                         }
                     } else {
                         Debug.Assert(existingEdgeType.HasAnyFlagsB(Edge.Type.Terrain | Edge.Type.Obstacle | Edge.Type.Clearance));
                         Debug.Assert(edge->MajorEdge != null && majorEdge == null);
                     }
-#endif
                     // Minor Terrain cannot overwrite Minor Obstacle or Clearance, so do nothing
                     // Also, Minor Obstacle would never try to overwrite Minor Clearance and vice-versa because they would be removed first
                     // Also, Minor Terrain cannot overwrite Minor Clearance | Obstacle
@@ -1110,7 +1118,7 @@ FoundEdgeMajor:
 
         void Connect(Vertex* a, Vertex* b, Entity cid, Edge.Type newConstraintEdgeType, Edge* majorEdge)
         {
-            bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
+            bool isMajor = newConstraintEdgeType.IsMajor();
             var connection = GetConnection(a, b, isMajor);
             if (connection == null)
             {
@@ -1144,8 +1152,8 @@ FoundEdgeMajor:
 
         Edge* Connect(Vertex* a, Vertex* b, UnsafeList<Entity> crep, Edge.Type newConstraintEdgeType, Edge* majorEdge)
         {
-            bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
-            var connection = GetConnection(a, b, Edge.IsEdgeTypeMajor(newConstraintEdgeType));
+            bool isMajor = newConstraintEdgeType.IsMajor();
+            var connection = GetConnection(a, b, newConstraintEdgeType.IsMajor());
             if (connection == null)
             {
                 //Debug.Log($"Connect crep - Creating new connection");
@@ -1174,7 +1182,7 @@ FoundEdgeMajor:
         bool TryGetPoint(float2 p, Edge* e, out Vertex* v)
         {
             //Debug.Log("TryGetPoint");
-            bool isMajor = Edge.IsEdgeTypeMajor(e->EdgeType);
+            bool isMajor = e->EdgeType.IsMajor();
             v = null;
             var closest = _qt.FindClosest(p, isMajor ? Vertex.Type.Major : Vertex.Type.Minor);
 
@@ -1383,6 +1391,108 @@ FoundEdgeMajor:
             }
         }
 
+
+        void FindMajorInMinorOverwrittensAndIncompletes(Vertex* vert, Edge* ignoreEdge1, Edge* ignoreEdge2, ref UnsafeList<Ptr<Edge>> incompleteMajors, ref UnsafeList<Ptr<Edge>> overwrittenMinors)
+        {
+            var i = vert->GetEdgeEnumerator(false);
+            while (i.MoveNext())
+            {
+                Edge.VerifyEdge(i.Current, false);
+                if (i.Current->HasMajorEdge 
+                    && i.Current != ignoreEdge1 && i.Current->Sym != ignoreEdge1
+                    && i.Current != ignoreEdge2 && i.Current->Sym != ignoreEdge2) {
+
+                    if (i.Current->EdgeType.IsOverwritten()) {
+                        overwrittenMinors.Add(i.Current);
+                    } else if (i.Current->MajorEdge->Org != vert && i.Current->MajorEdge->Dest != vert) {
+                        if (incompleteMajors.TryIndexOf(i.Current->MajorEdge, out int indexOf)) {
+                            incompleteMajors.RemoveAtSwapBack(indexOf);
+                        } else if (incompleteMajors.TryIndexOf(i.Current->MajorEdge->Sym, out indexOf)) {
+                            incompleteMajors.RemoveAtSwapBack(indexOf);
+                        } else {
+                            incompleteMajors.Add(i.Current->MajorEdge);
+                        }
+                    }
+                }
+            }
+        }
+
+
+        // If isRemovingMajor then we won't add overwritten edges to found
+        bool FindMajorInMinorEdges(Edge* majorEdge, ref UnsafeList<IntPtr> found) => FindMajorInMinorEdgesRecursive(majorEdge, null, majorEdge->Org, ref _elistMinor);
+
+        // Only Recursive if can't find next MajorInMinor and overwrittens are detected
+        bool FindMajorInMinorEdgesRecursive(Edge* majorEdge, Edge* prevEdge, Vertex* firstMinorVertex, ref UnsafeList<IntPtr> found)
+        {
+            // Other refers to these edges not representing majorEdge or current found MajorInMinor edge
+            UnsafeList<Ptr<Edge>> otherOverwrittenMinors = new (1, Allocator.Temp); // Only used when we can't find the next MajorInMinor
+
+            Vertex* currMinorOrg = firstMinorVertex;
+            // TODO: Maybe make this a while (true) since will hit the early-out first anyways
+            while (currMinorOrg != majorEdge->Dest) // Depth first search for all (Quad)Edges that reference majorEdge as their MajorEdge
+            {
+                bool foundEdge = false;
+                var i = currMinorOrg->GetEdgeEnumerator(false);
+                while (i.MoveNext())
+                {
+                    Edge.VerifyEdge(i.Current, false);
+                    if (i.Current->HasMajorEdge && i.Current->Sym != prevEdge && i.Current != prevEdge) {
+                        if (i.Current->Dest == majorEdge->Dest) {
+                            foundEdge = true; // Unnecessary, leaving for clarity
+                            found.Add((IntPtr) i.Current);
+                            return true; // Early-out since we have reached the end of the majorEdge
+                        }
+                        else if (i.Current->ContainsMajorEdge(majorEdge)) {
+                            foundEdge = true;
+                            found.Add((IntPtr) i.Current);
+                            currMinorOrg = i.Current->Dest;
+                            prevEdge = i.Current;
+                            break; // Need the break here because prevEdge is changed and the first if statement is invalidated
+                        } else if (i.Current->EdgeType.IsOverwritten()) {
+                            Debug.Log("Other MajorInMinor Edge has been Overwritten");
+                            otherOverwrittenMinors.Add(i.Current);
+                        }
+                    }
+                }
+                if (!foundEdge) { // If not foundEdge then we loop through other overwrittens to see if we can find the rest of MajorInMinor through them
+        
+                    // If here, means we didn't reach removedMajor->Dest or find the next MajorInMinor, so then try to find MajorInMinor through overwrittens
+
+                    Debug.Assert(currMinorOrg == firstMinorVertex || (prevEdge != null ? currMinorOrg == prevEdge->Dest : false), $"prevEdge == null: {prevEdge == null}");
+                    Debug.Assert(MathLib.LogicalIff(prevEdge == null, currMinorOrg == majorEdge->Org)); // Means we are still on first vertex
+
+                    // TODO: In future (low priority), could make flag for Major edge that has been added to Minor
+
+                    if (otherOverwrittenMinors.Length > 0) {
+                        Debug.Log("otherOverwrittenMinors > 0, so will now start checking neighboring overwritten edges");
+                    }
+
+                    for (int j = 0; j < otherOverwrittenMinors.Length; j++) {
+                        if (FindMajorInMinorEdgesRecursive(majorEdge, otherOverwrittenMinors[j], otherOverwrittenMinors[j].p->Dest, ref found)) {
+#if UNITY_ASSERTIONS
+                            for (int k = j + 1; k < otherOverwrittenMinors.Length; k++) { // Debug make sure we can't find MajorInMinor when going through other overwrittens
+                                Debug.Assert(!FindMajorInMinorEdgesRecursive(majorEdge, otherOverwrittenMinors[k], otherOverwrittenMinors[k].p->Dest, ref found));
+                            }
+#endif
+                            Debug.Log("FindMajorInMinorEdges - Found rest of MajorInMinor by going through overwritten");
+                            return true;
+                        }
+                    }
+                    Debug.Log("removedMajorEdge not in Minor graph, has not been inserted yet");
+                    // If couldn't find more (i.e. we hit the code below), then removedMajorEdge is not in the Minor graph because it may not have been inserted yet
+
+                    Debug.Assert(currMinorOrg == majorEdge->Org, "Only found part of Major edge in Minor graph");
+                    // TODO: Make the following call FindMajorInMinorEdgesRecursive starting from opposite end but only if this is the first iteration. Wrap in #if
+                    // Debug.Assert(MathLib.LogicalIf(currMinorOrg == majorEdge->Org, AssertDestDoesntContainMajorEdge(majorEdge)));
+                    
+                    return false;
+                }
+            }
+
+            Debug.Assert(false, "Shouldn't hit this since we early-out above");
+            return true;
+        }
+
         // NOTE: Point constraints are removed automatically in the Minor graph by RemoveConstraint which will call RemoveVertex
         void RemoveMajorInMinor(Edge* removedMajorEdge)
         {
@@ -1397,27 +1507,9 @@ FoundEdgeMajor:
             if (removedMajorEdge->Org->GetEdge(false) == null || removedMajorEdge->Dest->GetEdge(false) == null) { // If no Minor edges attached yet then early-out
                 return;
             }
-            UnsafeList<Ptr<Edge>> otherMajorEdges = new UnsafeList<Ptr<Edge>>(1, Allocator.Temp);
-            Edge* prevEdge = null;
-            Vertex* currentMinorOrg = removedMajorEdge->Org;
-            while (currentMinorOrg != removedMajorEdge->Dest) // Depth first search for all (Quad)Edges that reference removedMajorEdge as their MajorEdge
-            {
-                var i = currentMinorOrg->GetEdgeEnumerator(false);
-                while (i.MoveNext())
-                {
-                    Edge.VerifyEdge(i.Current, false);
-                    if (i.Current->ContainsMajorEdge(removedMajorEdge) && i.Current->Sym != prevEdge)
-                    {
-                        _elistMinor.Add((IntPtr) i.Current);
-                        currentMinorOrg = i.Current->Dest;
-                        prevEdge = i.Current;
-                        break;
-                    }
-                }
-                if (currentMinorOrg == removedMajorEdge->Org) { // Then removedMajorEdge is not in the Minor graph, so return
-                    AssertDestDoesntContainMajorEdge(removedMajorEdge);
-                    return;
-                }
+
+            if (!FindMajorInMinorEdges(removedMajorEdge, ref _elistMinor)) {
+                return; // If we can't find removedMajorEdge in the Minor graph, it simply wasn't inserted yet
             }
 
             //Debug.Log("Resetting Minor edges that reference this Major edge back to Terrain or TerrainSub");
@@ -1425,15 +1517,11 @@ FoundEdgeMajor:
             Assert.IsTrue(_elistMinor.Length > 0);
 
             var firstEdge = (Edge*) _elistMinor[0];
-            if (firstEdge->Org->PointConstraints == 0) {
-                _vlistMinor.Add((IntPtr) firstEdge->Org);
-            }
+            if (firstEdge->Org->PointConstraints == 0) { _vlistMinor.Add((IntPtr) firstEdge->Org); }
             for (var i = 0; i < _elistMinor.Length; i++) // Add vertices of minor edges to list for potential removal
             {
                 var edge = (Edge*) _elistMinor[i];
-                if (edge->Dest->PointConstraints == 0) {
-                    _vlistMinor.Add((IntPtr) edge->Dest);
-                }
+                if (edge->Dest->PointConstraints == 0) { _vlistMinor.Add((IntPtr) edge->Dest); }
 
                 Debug.Assert(MathLib.LogicalIf(edge->Org->PointConstraints == 0, _vlistMinor.Contains((IntPtr) edge->Org)), "This vertex should already be added");
             }
@@ -1451,11 +1539,96 @@ FoundEdgeMajor:
                     $"removedMajorEdge->Org: {(long)removedMajorEdge->Org}, removedMajorEdge->Dest: {(long)removedMajorEdge->Dest}, _vlistMinor[_vlistMinor.Length - 1]: {(long)_vlistMinor[_vlistMinor.Length - 1]}, _vlistMinor[0]: {(long)_vlistMinor[0]}");
             }
 
-            for (var i = 0; i < _elistMinor.Length; i++) // Remove minor Edges
+            bool isFirstEdgeOverwritten_ReplacementNotFound = false;
+            Edge* prevEdge = null;
+            UnsafeList<IntPtr> dummyFoundList = new ();
+            UnsafeList<Ptr<Edge>> incompleteMajors = new (1, Allocator.Temp);
+            UnsafeList<Ptr<Edge>> otherOverwrittenMinors = new (1, Allocator.Temp);
+            for (var i = 0; i < _elistMinor.Length; i++) // First, fix any references for overwritten edges and make sure they aren't removed
             {
                 var edge = (Edge*) _elistMinor[i];
 
-                Debug.Assert(!Edge.IsEdgeTypeMajor(edge->EdgeType), $"edge->EdgeType: {edge->EdgeType}, removedMajorEdge->EdgeType: {removedMajorEdge->EdgeType}");
+                if (edge->EdgeType.IsOverwritten()) {
+                    _elistMinor[i] = IntPtr.Zero; // Set to null so we don't remove it later
+
+                    if (i == 0) { // This means this is the first MajorInMinor edge, so we must:
+                        // Do nothing as subsequent iterations should find the overwritten MajorEdge reference and reverse iterate to fix it for this edge
+                        // If subsequent iterations can't find overwitten MajorEdge, we hit the if statement below this _elistMinor for loop
+                        isFirstEdgeOverwritten_ReplacementNotFound = true;
+                    } else {
+                        Debug.Assert(prevEdge != null);
+                        otherOverwrittenMinors.Clear();
+                        FindMajorInMinorOverwrittensAndIncompletes(edge->Org, prevEdge, edge, ref incompleteMajors, ref otherOverwrittenMinors);
+
+                        if (isFirstEdgeOverwritten_ReplacementNotFound) {
+                            if (incompleteMajors.Length > 1) {
+                                UnsafeList<int> backtrackedOverlappingMajors = new UnsafeList<int>(1, Allocator.Temp);
+                                for (var j = 0; j < incompleteMajors.Length; j++) {
+                                    // Try to find an incompleteMajor that overlaps with removeMajorInMinor
+                                    if (FindMajorInMinorEdgesRecursive(incompleteMajors[j], edge->Sym, edge->Sym->Dest, ref dummyFoundList)) { // Sym because backtracking
+                                        backtrackedOverlappingMajors.Add(j);
+                                    }
+                                }
+                                if (backtrackedOverlappingMajors.Length > 0) {
+                                    for (var i_Reverse = i; i_Reverse >= 0; i_Reverse--) {
+                                        ResetMajorEdge((Edge*)_elistMinor[i_Reverse], incompleteMajors[backtrackedOverlappingMajors[0]], backtrackedOverlappingMajors.Length);
+                                    }
+                                    isFirstEdgeOverwritten_ReplacementNotFound = false;
+
+                                    for (var j = 0; j < backtrackedOverlappingMajors.Length; j++) {
+                                        incompleteMajors.RemoveAtSwapBack(backtrackedOverlappingMajors[j]);
+                                    }
+
+                                }/*  else if (backtrackedOverlappingMajors.Length == 0) {
+                                } */
+
+                            }/*  else if (incompleteMajors.Length == 0) {
+                            } */
+                        }
+
+                        if (incompleteMajors.Length > 1) {
+                            if (otherOverwrittenMinors.Length == 0) { // This means all incompleteMajors have this edge as a MajorInMinor but were overwritten by it
+                                Debug.Assert(FindMajorInMinorEdgesRecursive(incompleteMajors[0], edge, edge->Dest, ref dummyFoundList));
+                                ResetMajorEdge(edge, incompleteMajors[0], incompleteMajors.Length); // Just arbitrarily pick the first incompleteMajor
+                            } else if (otherOverwrittenMinors.Length > 1) { // This means each incompleteMajor may have this edge OR one of the other overwrittenMinors as a MajorInMinor
+                                int numOverlapping = 0;
+                                int arbitraryMajorIndex = -1;
+                                for (var j = 0; j < incompleteMajors.Length; j++) {
+                                    if (FindMajorInMinorEdgesRecursive(incompleteMajors[j], edge, edge->Dest, ref dummyFoundList)) {
+                                        numOverlapping++;
+                                        arbitraryMajorIndex = j;
+                                    }
+                                }
+                                if (numOverlapping > 0) {
+                                    ResetMajorEdge(edge, incompleteMajors[arbitraryMajorIndex], numOverlapping);
+                                } else { Debug.Log("Othe incompleteMajors do not go through this edge, they must go through another overwrittenEdge"); }
+                            }
+                        }
+
+                        void ResetMajorEdge(Edge* edge, Edge* arbitraryMajorEdge, int numOverlappingMajorEdges) {
+                            if (numOverlappingMajorEdges == 1) {
+                                Debug.Log("Clearing overwritten MajorInMinor -> not overwritten anymore");
+                                edge->SetOverwritten(false); // If only one incompleteMajor then it isn't overwritten anymore
+                            } else { Debug.Log("Passing MajorInMinor to other MajorEdge -> still overwritten"); }
+                            edge->MajorEdge = arbitraryMajorEdge;
+                        }
+                    }
+                }
+
+                prevEdge = edge;
+            }
+            if (isFirstEdgeOverwritten_ReplacementNotFound) {
+
+            }
+
+            for (var i = 0; i < _elistMinor.Length; i++) // Remove minor Edges
+            {
+                if (_elistMinor[i].IsNull()) { continue; } // Last step may have purposefully set an edge to null because it was overwritten
+
+                var edge = (Edge*) _elistMinor[i];
+
+
+                Debug.Assert(!edge->EdgeType.IsMajor(), $"edge->EdgeType: {edge->EdgeType}, removedMajorEdge->EdgeType: {removedMajorEdge->EdgeType}");
                 // This may be fine because an Obstacle could have been first turned into a Clearance:
                 // Debug.Assert((edge->EdgeType & ~Edge.Type.Minor) == (removedMajorEdge->EdgeType & ~Edge.Type.Major)
                 //     , $"edge->EdgeType: {edge->EdgeType}, removedMajorEdge->EdgeType: {removedMajorEdge->EdgeType}, This is probably fine");
@@ -1575,12 +1748,12 @@ FoundEdgeMajor:
                 {
                     var edge = (Edge*) _elist[i];
 
-                    Debug.Assert(isMajor == Edge.IsEdgeTypeMajor(edge->EdgeType) && Edge.IsEdgeTypeMajor(edge->EdgeType) == Edge.IsEdgeTypeMajor(constraintEdgeType)
+                    Debug.Assert(isMajor == edge->EdgeType.IsMajor() && edge->EdgeType.IsMajor() == constraintEdgeType.IsMajor()
                         , $"edge->EdgeType: {edge->EdgeType}, constraintEdgeType: {constraintEdgeType}");
                     // Either edge is a Major Obstacle or Minor Terrain, or edge is a Minor Terrain but overwritten by a Minor Obstacle or Minor Clearance
                     Debug.Assert(edge->EdgeType.HasAllFlagsB(constraintEdgeType) || edge->EdgeType.HasAllFlagsB(Edge.Type.Minor | Edge.Type.Obstacle)
                         || edge->EdgeType.HasAllFlagsB(Edge.Type.Minor | Edge.Type.Clearance), $"edge->EdgeType: {edge->EdgeType}, constraintEdgeType: {constraintEdgeType}");
-                    Debug.Assert(MathLib.LogicalIf(!Edge.IsEdgeTypeMajor(edge->EdgeType) && edge->MajorEdge != null,
+                    Debug.Assert(MathLib.LogicalIf(!edge->EdgeType.IsMajor() && edge->MajorEdge != null,
                         edge->EdgeType.HasAllFlagsB(Edge.Type.Minor | Edge.Type.Obstacle) || edge->EdgeType.HasAllFlagsB(Edge.Type.Minor | Edge.Type.Clearance)), $"edge->EdgeType: {edge->EdgeType}");
 
                     edge->RemoveConstraint(cid); // Only remove Entity Id of removed obstacle from edge's list
@@ -1644,7 +1817,7 @@ FoundEdgeMajor:
             {
                 Edge.VerifyEdge(e.Current, isMajor);
 
-                if (e.Current->IsEdgeTypeConstrained() /* e.Current->Constrained */)
+                if (e.Current->EdgeType.IsConstrained() /* e.Current->Constrained */)
                 {
                     if (amount == 2) // If v connects to more than 2 constraints then we know we can't remove it so just return
                         return;
@@ -1802,7 +1975,7 @@ FoundEdgeMajor:
         void InsertSegmentNoCrossConstraints(Vertex* a, Vertex* b, UnsafeList<Entity> crep, Edge.Type newConstraintEdgeType, Edge* majorEdge, byte material1, byte material2)
         {
             //Debug.Log("InsertSegmentNoCrossConstraints crep +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-            bool isMajor = Edge.IsEdgeTypeMajor(newConstraintEdgeType);
+            bool isMajor = newConstraintEdgeType.IsMajor();
             var c = GetConnection(a, b, isMajor);
 
             if (c != null)
@@ -1866,7 +2039,7 @@ FoundEdgeMajor:
 
                 Edge.VerifyEdge(edge, isMajor);
 
-                if (/* !edge->Constrained */ !edge->IsEdgeTypeConstrained() && Math.CircumcircleContains(edge->Org->Point, edge->Dest->Point, edge->ONext->Dest->Point, edge->DNext->Org->Point))
+                if (/* !edge->Constrained */ !edge->EdgeType.IsConstrained() && Math.CircumcircleContains(edge->Org->Point, edge->Dest->Point, edge->ONext->Dest->Point, edge->DNext->Org->Point))
                 {
                     flipStackUsing.Push(edge->OPrev);
                     flipStackUsing.Push(edge->DNext);
@@ -1892,12 +2065,12 @@ FoundEdgeMajor:
             q->Edge2.Next = &q->Edge2;
             q->Edge3.Next = &q->Edge1;
 
-            if (Edge.IsEdgeTypeMajor(newEdgeType)) {
+            if (newEdgeType.IsMajor()) {
                 Debug.Assert(!AddedOrModifiedMajorEdges.Contains((IntPtr)(&q->Edge1)) && !AddedOrModifiedMajorEdges.Contains((IntPtr)(&q->Edge2)) && !AddedOrModifiedMajorEdges.Contains((IntPtr)(&q->Edge3)));
                 AddedOrModifiedMajorEdges.TryAdd((IntPtr)(&q->Edge0));
             }
 
-            SetEndPoints(&q->Edge0, a, b, Edge.IsEdgeTypeMajor(newEdgeType));
+            SetEndPoints(&q->Edge0, a, b, newEdgeType.IsMajor());
 
             q->MajorEdge = majorEdge;
 
@@ -1958,7 +2131,7 @@ FoundEdgeMajor:
         {
             Edge.VerifyEdge(a);
             Edge.VerifyEdge(b);
-            Assert.IsTrue(GetConnection(a->Dest, b->Org, Edge.IsEdgeTypeMajor(newEdgeType)) == null);
+            Assert.IsTrue(GetConnection(a->Dest, b->Org, newEdgeType.IsMajor()) == null);
             var result = CreateEdge(a->Dest, b->Org, newEdgeType, majorEdge);
             Splice(result, a->LNext);
             Splice(result->Sym, b);

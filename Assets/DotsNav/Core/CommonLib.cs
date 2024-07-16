@@ -12,6 +12,7 @@ using UnityEngine.Rendering;
 using static System.Runtime.CompilerServices.MethodImplOptions;
 using MI = System.Runtime.CompilerServices.MethodImplAttribute;
 
+
 public static class CommonLib
 {
     // public static Entity CreatePolygonPrefab(Material material, Mesh mesh) {
@@ -182,108 +183,8 @@ public static class CommonLib
     // }
 
     public static Color[] CycleColors = { Color.blue, Color.cyan, Color.green, Color.yellow, Color.red };
-}
 
-
-public static class MiscExtensions
-{
     public static float3 ViewDirection(this Camera camera) {
         return camera.transform.forward;
     }
-
-    const int s_ByteSize = 1;
-    const int s_UIntSize = 4;
-    const int s_ULongSize = 8;
-    static MiscExtensions() {
-        Debug.Assert(s_ByteSize == UnsafeUtility.SizeOf<byte>()); // TODO: These are gauranteed so delete
-        Debug.Assert(s_UIntSize == UnsafeUtility.SizeOf<uint>());
-        Debug.Assert(s_ULongSize == UnsafeUtility.SizeOf<ulong>());
-    }
-    
-    // Private Extensions:
-    [MI(AggressiveInlining)] unsafe static byte ToByte<TEnum>(ref this TEnum t) where TEnum : struct, Enum {
-        void* enumPtr = UnsafeUtility.AddressOf(ref t);
-        return *(byte*)enumPtr;
-    }
-    [MI(AggressiveInlining)] unsafe static uint ToUInt<TEnum>(ref this TEnum t) where TEnum : struct, Enum {
-        void* enumPtr = UnsafeUtility.AddressOf(ref t);
-        return *(uint*)enumPtr;
-    }
-    [MI(AggressiveInlining)] unsafe static ulong ToULong<TEnum>(ref this TEnum t) where TEnum : struct, Enum {
-        void* enumPtr = UnsafeUtility.AddressOf(ref t);
-        return *(ulong*)enumPtr;
-    }
-
-    // Public Extensions:
-    [MI(AggressiveInlining)] public static bool HasAnyFlagsB<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ByteSize, "Enum is not a byte");
-        return (lhs.ToByte() & rhs.ToByte()) > 0;
-    }
-    [MI(AggressiveInlining)] public static bool HasAnyFlagsI<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_UIntSize, "Enum is not an int");
-        return (lhs.ToUInt() & rhs.ToUInt()) > 0;
-    }
-    [MI(AggressiveInlining)] public static bool HasAnyFlagsL<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ULongSize, "Enum is not a long");
-        return (lhs.ToULong() & rhs.ToULong()) > 0;
-    }
-
-    [MI(AggressiveInlining)] public static bool HasNoFlagsB<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ByteSize, "Enum is not a byte");
-        return (lhs.ToByte() & rhs.ToByte()) == 0;
-    }
-    [MI(AggressiveInlining)] public static bool HasNoFlagsI<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_UIntSize, "Enum is not an int");
-        return (lhs.ToUInt() & rhs.ToUInt()) == 0;
-    }
-    [MI(AggressiveInlining)] public static bool HasNoFlagsL<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ULongSize, "Enum is not a long");
-        return (lhs.ToULong() & rhs.ToULong()) == 0;
-    }
-
-    [MI(AggressiveInlining)] public static bool HasAllFlagsB<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ByteSize, "Enum is not a byte");
-        byte flags = rhs.ToByte();
-        return (lhs.ToByte() & flags) == flags;
-    }
-    [MI(AggressiveInlining)] public static bool HasAllFlagsI<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_UIntSize, "Enum is not an int");
-        uint flags = rhs.ToUInt();
-        return (lhs.ToUInt() & flags) == flags;
-    }
-    [MI(AggressiveInlining)] public static bool HasAllFlagsL<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ULongSize, "Enum is not a long");
-        ulong flags = rhs.ToULong();
-        return (lhs.ToULong() & flags) == flags;
-    }
-
-    [MI(AggressiveInlining)] public static bool HasOnlyFlagsB<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ByteSize, "Enum is not a byte");
-        byte flags = rhs.ToByte();
-        return (lhs.ToByte() | flags) == flags;
-    }
-    [MI(AggressiveInlining)] public static bool HasOnlyFlagsI<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_UIntSize, "Enum is not an int");
-        uint flags = rhs.ToUInt();
-        return (lhs.ToUInt() | flags) == flags;
-    }
-    [MI(AggressiveInlining)] public static bool HasOnlyFlagsL<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-        Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ULongSize, "Enum is not a long");
-        ulong flags = rhs.ToULong();
-        return (lhs.ToULong() | flags) == flags;
-    }
-
-
-    // [MI(AggressiveInlining)] public static int MaskB<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-    //     Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ByteSize, "Enum is not a byte");
-    //     return lhs.ToByte() & rhs.ToByte();
-    // }
-    // [MI(AggressiveInlining)] public static bool MaskI<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-    //     Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_UIntSize, "Enum is not an int");
-    //     return (lhs.ToUInt() & rhs.ToUInt()) > 0;
-    // }
-    // [MI(AggressiveInlining)] public static bool MaskL<TEnum>(this TEnum lhs, TEnum rhs) where TEnum : unmanaged, Enum {
-    //     Debug.Assert(UnsafeUtility.SizeOf<TEnum>() == s_ULongSize, "Enum is not a long");
-    //     return (lhs.ToULong() & rhs.ToULong()) > 0;
-    // }
 }

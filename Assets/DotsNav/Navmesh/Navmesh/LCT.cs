@@ -7,7 +7,7 @@ namespace DotsNav.Navmesh
     {
         internal static void ResetClearance(Edge* s)
         {
-            if (!Edge.IsEdgeTypeMajor(s->EdgeType)) {
+            if (!s->EdgeType.IsMajor()) {
                 UnityEngine.Debug.Log("Minor edge ResetClearance");
                 // return; // TODO: Delete this if statement and allow MinorEdges to be Reset
             }

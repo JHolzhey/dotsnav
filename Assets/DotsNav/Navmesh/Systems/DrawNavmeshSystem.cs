@@ -106,9 +106,10 @@ namespace DotsNav.Navmesh.Systems
                 while (enumeratorMinor.MoveNext())
                 {
                     var edge = enumeratorMinor.Current;
+                    Debug.Assert(edge->_indexInQuadEdge == 0 || edge->_indexInQuadEdge == 1, $"edge->_indexInQuadEdge: {edge->_indexInQuadEdge}");
                     numMinorEdges++;
 
-                    Debug.Assert(!Edge.IsEdgeTypeMajor(edge->EdgeType), $"edge->EdgeType: {edge->EdgeType}");
+                    Debug.Assert(!edge->EdgeType.IsMajor(), $"edge->EdgeType: {edge->EdgeType}");
 
                     if (!(edge->TriangleId == edge->LNext->TriangleId && edge->LNext->TriangleId == edge->LPrev->TriangleId)) {
                         Debug.Assert(false, $"Unequal TriangleId, edge = {edge->TriangleId}, edge->LNext = {edge->LNext->TriangleId}, edge->LPrev = {edge->LPrev->TriangleId}");
@@ -141,8 +142,7 @@ namespace DotsNav.Navmesh.Systems
                         // && edge->IsConstrained && edge->QuadEdge->Crep.Length == 1 && edge->QuadEdge->Crep[0] == Entity.Null)
                         continue;
 
-                    Edge.EdgeColors.TryGetValue(edge->EdgeType, out Color c);
-
+                    Color c = edge->EdgeType.GetDebugColor();
                     
                     var a = math.transform(ltw.Value, edge->Org->Point.ToXxY());
                     var b = math.transform(ltw.Value, edge->Dest->Point.ToXxY());
@@ -169,7 +169,7 @@ namespace DotsNav.Navmesh.Systems
 
                         // If dot too large draw line between and midpoints
                         if (!MathLib.LogicalIf(edgeLength > 0.1f, MathLib.IsEpsEqual(dot, 0f, 0.001f))) { // this 0.02f check is here because very small edges can rightfully be unaligned
-                            Debug.Assert(MathLib.IsEpsEqual(dot, 0.005f, 0.001f), $"dot: {dot}, edge length: {edgeLength}");
+                            // Debug.Assert(MathLib.IsEpsEqual(dot, 0.005f, 0.001f), $"dot: {dot}, edge length: {edgeLength}");
                             // lines.Add(new Line(minorMidpoint, majorMidpoint, Color.white));
                             // DrawPoint(ref lines, minorMidpoint.xz, Color.white, 0.03f);
                             // DrawPoint(ref lines, majorMidpoint.xz, Color.grey, 0.03f);
@@ -214,13 +214,14 @@ namespace DotsNav.Navmesh.Systems
                 while (enumerator.MoveNext())
                 {
                     var edge = enumerator.Current;
+                    Debug.Assert(edge->_indexInQuadEdge == 0 || edge->_indexInQuadEdge == 1, $"edge->_indexInQuadEdge: {edge->_indexInQuadEdge}");
 
-                    Debug.Assert(Edge.IsEdgeTypeMajor(edge->EdgeType), $"edge->EdgeType: {edge->EdgeType}");
+                    Debug.Assert(edge->EdgeType.IsMajor(), $"edge->EdgeType: {edge->EdgeType}");
 
                     if (data.DrawMode == DrawMode.None || (data.DrawMode == DrawMode.Constrained && !edge->IsConstrained))
                         continue;
 
-                    Edge.EdgeColors.TryGetValue(edge->EdgeType, out Color c);
+                    Color c = edge->EdgeType.GetDebugColor();
                         
                     var a = math.transform(ltw.Value, edge->Org->Point.ToXxY());
                     var b = math.transform(ltw.Value, edge->Dest->Point.ToXxY());

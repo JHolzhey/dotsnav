@@ -25,31 +25,28 @@ namespace DotsNav.Navmesh
         
         unsafe Edge* _majorEdge;
         public unsafe Edge* MajorEdge {
-            get => _majorEdge;
+            get { VerifyMajorEdge(); return _majorEdge; }
             set {
-                if (value != null) {
-                    _majorEdge = MathLib.IsSameDir(Edge0.SegVector, value->SegVector) ? value : value->Sym; // Primary edge and MajorEdge face the same direction for faster lookup
-                    VerifyMajorEdge();
-                } else {
-                    _majorEdge = null;
-                }
+                _majorEdge = value != null ? (MathLib.IsSameDir(Edge0.SegVector, value->SegVector) ? value : value->Sym) : null; // Primary edge and MajorEdge face the same direction for faster lookup
+                VerifyMajorEdge();
             }
         }
 
+        [System.Diagnostics.Conditional("UNITY_ASSERTIONS")]
         public unsafe void VerifyMajorEdge() {
-            Debug.Assert(MathLib.LogicalIf(math.length(Edge0.SegVector) > 0.1f, MathLib.IsParallel(Edge0.SegVector.XOY(), _majorEdge->SegVector.XOY(), 0.001f)),
-                $"Major edge is not parallel, edgeLength: {math.length(Edge0.SegVector)}");
+            if (_majorEdge != null) {
+                Debug.Assert(MathLib.LogicalIf(math.length(Edge0.SegVector) > 0.1f, MathLib.IsParallel(Edge0.SegVector.XOY(), _majorEdge->SegVector.XOY(), 0.001f)),
+                    $"Major edge is not parallel, edgeLength: {math.length(Edge0.SegVector)}");
 
-#if UNITY_ASSERTIONS
-            if (!Edge0.IsMajorEdgeOverwritten) {
-                Debug.Assert(MathLib.IsSameDir(Edge0.SegVector, _majorEdge->SegVector));
-                Debug.Assert(MathLib.IsSameDir(Edge0.Sym->SegVector, _majorEdge->Sym->SegVector));
+                if (!Edge0.EdgeType.IsOverwritten()) {
+                    Debug.Assert(MathLib.IsSameDir(Edge0.SegVector, _majorEdge->SegVector));
+                    Debug.Assert(MathLib.IsSameDir(Edge0.Sym->SegVector, _majorEdge->Sym->SegVector));
+                }
+
+                Debug.Assert(!Edge0.EdgeType.IsMajor() && _majorEdge->EdgeType.IsMajor(), $"Edge0.EdgeType: {Edge0.EdgeType}, _majorEdge->EdgeType: {_majorEdge->EdgeType}");
+                Debug.Assert(Edge0.MainEdgeType == _majorEdge->MainEdgeType, $"Edge0.EdgeType: {Edge0.EdgeType}, _majorEdge->EdgeType: {_majorEdge->EdgeType}");
+                Debug.Assert(_majorEdge->Org != null && _majorEdge->Dest != null, $"Org: {_majorEdge->Org != null}, Dest: {_majorEdge->Dest != null}");
             }
-#endif
-
-            Debug.Assert(!Edge.IsEdgeTypeMajor(Edge0.EdgeType) && Edge.IsEdgeTypeMajor(_majorEdge->EdgeType), $"Edge0.EdgeType: {Edge0.EdgeType}, _majorEdge->EdgeType: {_majorEdge->EdgeType}");
-            Debug.Assert((Edge0.EdgeType & ~Edge.Type.Minor) == (_majorEdge->EdgeType & ~Edge.Type.Major), $"Edge0.EdgeType: {Edge0.EdgeType}, _majorEdge->EdgeType: {_majorEdge->EdgeType}");
-            Debug.Assert(_majorEdge->Org != null && _majorEdge->Dest != null, $"Org: {_majorEdge->Org != null}, Dest: {_majorEdge->Dest != null}");
         }
 
         public unsafe void Delete() { // Debug
@@ -61,6 +58,14 @@ namespace DotsNav.Navmesh
             Edge1.TriangleId = -10;
             Edge2.TriangleId = -10;
             Edge3.TriangleId = -10;
+            Edge0.TriangleMaterial = byte.MaxValue;
+            Edge1.TriangleMaterial = byte.MaxValue;
+            Edge2.TriangleMaterial = byte.MaxValue;
+            Edge3.TriangleMaterial = byte.MaxValue;
+            Edge0.TriangleSlopeCost = -1;
+            Edge1.TriangleSlopeCost = -1;
+            Edge2.TriangleSlopeCost = -1;
+            Edge3.TriangleSlopeCost = -1;
         }
 
         public Edge.Type EdgeType;

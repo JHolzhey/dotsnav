@@ -109,7 +109,7 @@ public struct FloatWithFriend<TFriend> where TFriend : unmanaged {
     public IntRect(int2 bottomLeft, int2 topRight) : this(bottomLeft.x, bottomLeft.y, topRight.x, topRight.y) {}
     public readonly int Area() => (xMax - xMin + 1) * (yMax - yMin + 1);
 }
-public static class MathExtensions {
+public static class MathExtensions {    
     public static float3 NextCirclePointXZ(this ref Random random, float3 center, float radius) {
         float randomRadius = random.NextFloat(0, radius);
         float2 randomDirection = random.NextFloat2Direction();
@@ -143,6 +143,10 @@ public static class MathLib
     public const float Rad180 = math.PI;
     public const float Rad270 = math.PI * 3f / 2f;
     public const float Rad360 = math.PI*2f;
+
+    public const byte ByteFull = 0xFF;
+    public const uint UIntFull = 0xFFFFFFFF;
+    public const ulong ULongFull = 0xFFFFFFFFFFFFFFFF;
 
     // public static float Mod(float a, float n) { return a - math.floor(a/n) * n; } // Use math.fmod instead
     // TODO: This probalby doesn't work:

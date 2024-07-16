@@ -204,7 +204,7 @@ namespace DotsNav.Navmesh
                 tri[2] = terrainMesh.SlopePoints[slopeTriangle.z];
                 tri[3] = terrainMesh.SlopePoints[slopeTriangle.x];
 
-                InsertMinor(new Span<PlanePoint>(tri, 4), Entity.Null, float4x4.identity, Edge.Type.Terrain);
+                // InsertMinor(new Span<PlanePoint>(tri, 4), Entity.Null, float4x4.identity, Edge.Type.Terrain);
             }
 
             AddedOrModifiedMajorEdges.Clear();

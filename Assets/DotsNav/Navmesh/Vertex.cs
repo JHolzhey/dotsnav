@@ -13,8 +13,8 @@ namespace DotsNav.Navmesh
         [System.Flags]
         public enum Type : byte {
             None = 0,
-            Major = 1, // Casted to and from Edge.Major / Edge.Minor
-            Minor = 1 << 1,
+            Minor = 0,
+            Major = 1 << 4, // Casted to and from Edge.Major / Edge.Minor
         }
         /// <summary>
         /// Returns the position of this vertex
