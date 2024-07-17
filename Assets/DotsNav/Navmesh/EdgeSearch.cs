@@ -50,7 +50,7 @@ namespace DotsNav.Navmesh
                             step.Edge->AddConstraint(constraintId);
                             Navmesh.ResetClearance(step.Edge);
                         }
-                        Navmesh.OverwriteEdgeType(step.Edge, newConstraintEdgeType, majorEdge);
+                        Navmesh.ReplaceEdgeType(step.Edge, newConstraintEdgeType, majorEdge);
 
                         step = steps[step.Previous];
                     }

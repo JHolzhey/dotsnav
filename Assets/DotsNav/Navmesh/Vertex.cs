@@ -1,5 +1,4 @@
 using Unity.Collections.LowLevel.Unsafe;
-using Unity.Entities.UniversalDelegates;
 using Unity.Mathematics;
 using Debug = UnityEngine.Debug;
 
@@ -13,9 +12,10 @@ namespace DotsNav.Navmesh
         [System.Flags]
         public enum Type : byte {
             None = 0,
-            Minor = 0,
             Major = 1 << 4, // Casted to and from Edge.Major / Edge.Minor
+            Minor = 1 << 5,
         }
+
         /// <summary>
         /// Returns the position of this vertex
         /// </summary>
@@ -119,7 +119,7 @@ namespace DotsNav.Navmesh
                 {
                     Current = _start;
                     _started = true;
-                    return true; // TODO: Just do Current != null
+                    return Current != null;
                 }
 
                 

@@ -25,7 +25,7 @@ namespace DotsNav.Navmesh
         
         unsafe Edge* _majorEdge;
         public unsafe Edge* MajorEdge {
-            get { VerifyMajorEdge(); return _majorEdge; }
+            get => _majorEdge;
             set {
                 _majorEdge = value != null ? (MathLib.IsSameDir(Edge0.SegVector, value->SegVector) ? value : value->Sym) : null; // Primary edge and MajorEdge face the same direction for faster lookup
                 VerifyMajorEdge();

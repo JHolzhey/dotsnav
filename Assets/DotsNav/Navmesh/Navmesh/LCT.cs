@@ -1,5 +1,6 @@
 using Unity.Collections;
 using Unity.Mathematics;
+using Debug = UnityEngine.Debug;
 
 namespace DotsNav.Navmesh
 {
@@ -7,10 +8,6 @@ namespace DotsNav.Navmesh
     {
         internal static void ResetClearance(Edge* s)
         {
-            if (!s->EdgeType.IsMajor()) {
-                UnityEngine.Debug.Log("Minor edge ResetClearance");
-                // return; // TODO: Delete this if statement and allow MinorEdges to be Reset
-            }
             var perp = Math.PerpCcw(s->Dest->Point - s->Org->Point);
             var o = s->Org->Point;
             var d = s->Dest->Point;
@@ -366,7 +363,7 @@ namespace DotsNav.Navmesh
         {
             var i = V.GetEnumerator();
             while (i.MoveNext()) {
-                UnityEngine.Debug.Assert(((Vertex*)i.Current)->VertexType.HasAllFlagsB(Vertex.Type.Major));
+                Debug.Assert(((Vertex*)i.Current)->VertexType.HasAllFlagsB(Vertex.Type.Major));
                 RemoveVertexIfEligible((Vertex*) i.Current, true);
             }
         }
@@ -375,7 +372,7 @@ namespace DotsNav.Navmesh
         {
             var verts = V.GetEnumerator();
             while (verts.MoveNext()) {
-                UnityEngine.Debug.Assert(((Vertex*)verts.Current)->VertexType.HasAllFlagsB(Vertex.Type.Major), "Only able to refine Major graph");
+                Debug.Assert(((Vertex*)verts.Current)->VertexType.HasAllFlagsB(Vertex.Type.Major), "Only able to refine Major graph");
                 _refinementQueue.PushBack(verts.Current);
             }
 

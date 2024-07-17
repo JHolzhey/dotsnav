@@ -6,16 +6,26 @@ using UnityEngine;
 
 namespace DotsNav.Navmesh
 {
-
     public static class EdgeTypeExtensions {
         public static Edge.Type Main(this Edge.Type edgeType) => edgeType & Edge.Type.MainMask;
-        public static bool IsConstrained(this Edge.Type edgeType) => (edgeType.IsMajor() && edgeType.HasAnyFlagsB(Edge.Type.Obstacle))
-                || (!edgeType.IsMajor() && edgeType.HasAnyFlagsB(Edge.Type.Terrain | Edge.Type.Obstacle | Edge.Type.Clearance));
+        public static Edge.Type M(this Edge.Type edgeType) => edgeType.Main();
+        public static bool IsConstrained(this Edge.Type edgeType) => edgeType.IsMajorConstrained() || edgeType.IsMinorConstrained();
 
-        // public static bool IsMajor(this Edge.Type edgeType) => edgeType.HasAnyFlagsB(Edge.Type.Major);
-        public static bool IsMajor(this Edge.Type edgeType) { /* Debug.Log($"Test: {edgeType.Test(Edge.Type.Clearance)}"); */ return edgeType.HasAnyFlagsB(Edge.Type.Major); }
-        public static bool IsOverwritten(this Edge.Type edgeType) => edgeType.HasAnyFlagsB(Edge.Type.Overwritten);
-        public static void SetOverwritten(ref this Edge.Type edgeType, bool value) => edgeType.SetFlagTest(Edge.Type.Overwritten, value);
+        // Mostly for debug;
+        public static bool IsMajorConstrained(this Edge.Type edgeType) => edgeType.IsMajor() && edgeType.IsMainMajorConstrained();
+        public static bool IsMinorConstrained(this Edge.Type edgeType) => edgeType.IsMinor() && edgeType.IsMainMinorConstrained();
+        public static bool IsMainMajorConstrained(this Edge.Type edgeType) => edgeType.M().IsAnyEqualB(Edge.Type.Obstacle, Edge.Type.Gate, Edge.Type.Link);
+        public static bool IsMainMinorConstrained(this Edge.Type edgeType) => edgeType.IsMainMajorConstrained() || edgeType.M().IsAnyEqualB(Edge.Type.Terrain, Edge.Type.Clearance);
+        public static bool IsMajorInMinor(this Edge.Type edgeType) => edgeType.IsMinor() && (edgeType.IsMainMajorConstrained() || edgeType.M().IsEqualB(Edge.Type.Clearance));
+
+        
+        public static bool IsMinor(this Edge.Type edgeType) => edgeType.HasAllFlagsB(Edge.Type.Minor);
+        public static bool IsMajor(this Edge.Type edgeType) => edgeType.HasAllFlagsB(Edge.Type.Major);
+
+        public static bool IsOverwritten(this Edge.Type edgeType) => edgeType.HasAllFlagsB(Edge.Type.Overwritten);
+        public static void SetOverwritten(ref this Edge.Type edgeType, bool value) => edgeType.SetFlagsB(Edge.Type.Overwritten, value);
+
+        public static Vertex.Type ToVertexType(this Edge.Type edgeType) => (Vertex.Type)(edgeType & (Edge.Type.Major | Edge.Type.Minor));
 
         public static Color GetDebugColor(this Edge.Type edgeType) => EdgeDebugColors[edgeType];
         public static readonly Dictionary<Edge.Type, Color> EdgeDebugColors = new Dictionary<Edge.Type, Color> {
@@ -43,21 +53,20 @@ namespace DotsNav.Navmesh
         [System.Flags]
         public enum Type : byte {
             None = 0,
-            Minor = 0,
 
-            Obstacle = 1,
-            Clearance = 1 << 1,
+            Obstacle,
+            Clearance,
+            Link,
+            Gate,
 
-            Terrain = 1 << 2,
-            Ignore = 1 << 3,
+            Terrain,
+            Ignore,
 
-            MainMask = 0x0F, // TODO: Better bit mask creation
+            MainMask = (1 << 4) - 1,
 
             Major = 1 << 4, // Casted to and from Vertex.Major / Vertex.Minor
-            Overwritten = 1 << 5, // Type could be:   Minor | [Clearance|Obstacle] | Overwritten
-
-            // MajorConstrained = Obstacle,
-            // MinorConstrained = Terrain | Obstacle | Clearance,
+            Minor = 1 << 5,
+            Overwritten = 1 << 6, // Type could be:   Minor | [Clearance|Obstacle] | Overwritten
         }
 
         internal readonly QuadEdge* QuadEdge;
@@ -124,28 +133,27 @@ namespace DotsNav.Navmesh
         }
 
         // TODO: Make conditional
+        public static unsafe void VerifyEdgeType(Type edgeType, bool isMajor) { // Minor edge can be any Main Type, and cannot be overwritten
+            Debug.Assert((isMajor && edgeType.IsMajor() && !edgeType.IsMinor() && edgeType.M().IsAnyEqualB(Type.Obstacle, Type.Link, Type.Gate, Type.Clearance))
+                || (!isMajor && edgeType.IsMinor() && !edgeType.IsMajor() && edgeType.HasNoFlagsB(Type.Overwritten)), $"isMajor: {isMajor}, edgeType: {edgeType}");
+        }
         public static unsafe void VerifyEdgeType(Type edgeType) => VerifyEdgeType(edgeType, edgeType.IsMajor());
-        public static unsafe void VerifyEdgeType(Type edgeType, bool isMajor) {
-            Debug.Assert((isMajor && edgeType.HasAnyFlagsB(Type.Major) && edgeType.HasNoFlagsB(Type.Minor) && edgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance))
-                || (!isMajor && edgeType.HasAnyFlagsB(Type.Minor) && edgeType.HasNoFlagsB(Type.Major) && edgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance | Type.Terrain | Type.Ignore))
-                , $"isMajor: {isMajor}, edgeType: {edgeType}");
-        }
 
-        public static unsafe void VerifyEdge(Edge* e) {
-            if (e->EdgeType.IsMajor()) {
-                Debug.Assert(MathLib.LogicalIff(e->EdgeType.HasAnyFlagsB(Type.Obstacle), e->IsConstrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
-            } else {
-                // The following is not true because a Minor Terrain could be overridden by a Minor Clearance | Obstacle
-                //Debug.Assert(MathLib.LogicalIff(e->EdgeType.HasAnyFlagsB(Type.Terrain), e->IsConstrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
-
-                Debug.Assert(MathLib.LogicalIff(e->EdgeType.HasAnyFlagsB(Type.Obstacle | Type.Clearance), e->MajorEdge != null), "Minor Obstaces and Clearances must have Major edges");
-            }
-            if (e->MajorEdge != null) { Debug.Assert(e->MainEdgeType == e->MajorEdge->MainEdgeType, $"e->EdgeType: {e->EdgeType}, e->MajorEdge->EdgeType: {e->MajorEdge->EdgeType}"); }
-        }
         public static unsafe void VerifyEdge(Edge* e, bool isMajor) {
             VerifyEdgeType(e->EdgeType, isMajor);
-            VerifyEdge(e);
+            if (isMajor) {
+                Debug.Assert(MathLib.LogicalIff(e->EdgeType.M().IsAnyEqualB(Type.Obstacle, Type.Gate, Type.Link), e->IsConstrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
+                Debug.Assert(MathLib.LogicalIff(e->EdgeType.M().IsEqualB(Type.Clearance), !e->IsConstrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
+                Debug.Assert(!e->EdgeType.IsOverwritten(), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
+            } else { // A Minor Terrain could be replaced by any Major edge type
+                Debug.Assert(MathLib.LogicalIf(e->IsConstrained, e->EdgeType.M().IsEqualB(Type.Terrain) || e->EdgeType.M().IsAnyEqualB(Type.Obstacle, Type.Clearance, Type.Gate, Type.Link)), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
+                Debug.Assert(MathLib.LogicalIf(e->EdgeType.M().IsEqualB(Type.Ignore), !e->IsConstrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
+                Debug.Assert(MathLib.LogicalIff(e->EdgeType.IsMajorInMinor(), e->MajorEdge != null), "Minor Obstaces and Clearances must have Major edges");
+            }
+            if (e->MajorEdge != null) { Debug.Assert(e->MainEdgeType == e->MajorEdge->MainEdgeType /* || e->EdgeType.IsOverwritten() TESTING WITHOUT FIRST */, $"e->EdgeType: {e->EdgeType}, e->MajorEdge->EdgeType: {e->MajorEdge->EdgeType}"); }
         }
+        public static unsafe void VerifyEdge(Edge* e) => VerifyEdge(e, e->EdgeType.IsMajor());
+
 
         public float CalcSlopeCost() => -FaceTriangle().Plane.CalcWalkingSlopeCost();
 

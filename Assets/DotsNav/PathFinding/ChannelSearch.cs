@@ -208,7 +208,7 @@ namespace DotsNav.PathFinding
 
                 ++cost;
 
-                float GetEdgeClearance<TNextClearance>(Edge* next, Edge* prevMajorEdge, out Edge* currMajorEdge) where TNextClearance : unmanaged, INextClearance
+                float GetEdgeClearance<TClearanceSide>(Edge* next, Edge* prevMajorEdge, out Edge* currMajorEdge) where TClearanceSide : unmanaged, INextClearance
                 {
                     currMajorEdge = prevMajorEdge; // If this Minor edge doesn't have a MajorEdge, then prevMajorEdge carries over
                     switch(next->MainEdgeType) 
@@ -221,15 +221,16 @@ namespace DotsNav.PathFinding
                             clearance = new ClearanceRight().Get(currMajorEdge);
                         } else if (currMajorEdge->OPrev == prevMajorEdge) {
                             clearance = new ClearanceLeft().Get(currMajorEdge);
-                        } else if (prevMajorEdge != null && currMajorEdge->Sym != prevMajorEdge) { // Then we are dealing with an overwritten MajorEdge edge
+                        } else if (prevMajorEdge != null && currMajorEdge->Sym != prevMajorEdge) {
                             clearance = -1;
+                            DebugDrawArrow(next->Org->Point3D, next->Dest->Point3D, Color.white, 0.01f);
                             Debug.LogError($"Bad, MajorEdge was not Overwritten: {currMajorEdge == prevMajorEdge}, {currMajorEdge->ONext == prevMajorEdge}, {currMajorEdge->LNext == prevMajorEdge}, {currMajorEdge->DPrev == prevMajorEdge}, {currMajorEdge->OPrev == prevMajorEdge}, {currMajorEdge->DNext == prevMajorEdge}, {currMajorEdge->RPrev == prevMajorEdge}, {currMajorEdge->RNext == prevMajorEdge}");
                         }
                         // if (prevMajorEdge != null) { DebugDrawArrow(prevMajorEdge->Org->Point3D, prevMajorEdge->Dest->Point3D, Color.white, 0.01f); }
                         return clearance;
                     case Edge.Type.Terrain:
                         // if is more than clearance, special centering code
-                        return new TNextClearance().Get(next);
+                        return new TClearanceSide().Get(next);
                     case Edge.Type.Obstacle:
                         return -1;
                     case Edge.Type.Ignore:

@@ -155,7 +155,7 @@ namespace DotsNav.Navmesh.Systems
 
 
                     // Asserting Major Edges:
-                    if (edge->EdgeType.HasAnyFlagsB(Edge.Type.Obstacle | Edge.Type.Clearance)) {
+                    if (edge->EdgeType.IsMajorInMinor()) {
                         float3 minorMidpoint = MathLib.Midpoint(a, b);
 
                         edge->QuadEdge->VerifyMajorEdge();
