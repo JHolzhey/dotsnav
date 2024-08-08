@@ -13,7 +13,7 @@ namespace DotsNav.Navmesh.Hybrid
     {
         public void Convert(EntityManager entityManager, Entity entity)
         {
-            entityManager.AddComponentData(entity, new NavmeshObstacleComponent());
+            entityManager.AddComponentData(entity, new NavmeshMajorConstraintComponent());
         }
     }
 }

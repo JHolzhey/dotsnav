@@ -46,14 +46,14 @@ namespace DotsNav.Navmesh.Systems
             _destroyQuery =
                 new EntityQueryBuilder(Allocator.Temp)
                     .WithAll<CleanUpObstacleComponent>()
-                    .WithNone<NavmeshObstacleComponent>()
+                    .WithNone<NavmeshMajorConstraintComponent>()
                     .Build(ref state);
 
             _insertQuery =
                 new EntityQueryBuilder(Allocator.Temp)
                     .WithAll<PlaneComponent>()
                     .WithAll<VertexElement>()
-                    .WithAll<NavmeshObstacleComponent>()
+                    .WithAll<NavmeshMajorConstraintComponent>()
                     .WithAll<LocalToWorld>()
                     .WithNone<VertexAmountElement>()
                     .WithNone<CleanUpObstacleComponent>()
@@ -64,7 +64,7 @@ namespace DotsNav.Navmesh.Systems
                     .WithAll<PlaneComponent>()
                     .WithAll<VertexElement>()
                     .WithAll<VertexAmountElement>()
-                    .WithAll<NavmeshObstacleComponent>()
+                    .WithAll<NavmeshMajorConstraintComponent>()
                     .WithAll<LocalToWorld>()
                     .WithNone<CleanUpObstacleComponent>()
                     .Build(ref state);
@@ -73,7 +73,7 @@ namespace DotsNav.Navmesh.Systems
                 new EntityQueryBuilder(Allocator.Temp)
                     .WithAll<PlaneComponent>()
                     .WithAll<VertexBlobComponent>()
-                    .WithAll<NavmeshObstacleComponent>()
+                    .WithAll<NavmeshMajorConstraintComponent>()
                     .WithAll<LocalToWorld>()
                     .WithNone<CleanUpObstacleComponent>()
                     .Build(ref state);
@@ -82,7 +82,7 @@ namespace DotsNav.Navmesh.Systems
                 new EntityQueryBuilder(Allocator.Temp)
                     .WithAll<PlaneComponent>()
                     .WithAll<ObstacleBlobComponent>()
-                    .WithAll<NavmeshObstacleComponent>()
+                    .WithAll<NavmeshMajorConstraintComponent>()
                     .WithAll<LocalToWorld>()
                     .WithNone<CleanUpObstacleComponent>()
                     .Build(ref state);
@@ -90,14 +90,14 @@ namespace DotsNav.Navmesh.Systems
             _destroyTerrainQuery =
                 new EntityQueryBuilder(Allocator.Temp)
                     .WithAll<CleanUpTerrainComponent>()
-                    .WithNone<NavmeshTerrainComponent>()
+                    .WithNone<NavmeshMinorConstraintComponent>()
                     .Build(ref state);
 
             _insertTerrainQuery =
                 new EntityQueryBuilder(Allocator.Temp)
                     .WithAll<PlaneComponent>()
                     .WithAll<VertexElement>()
-                    .WithAll<NavmeshTerrainComponent>()
+                    .WithAll<NavmeshMinorConstraintComponent>()
                     .WithAll<LocalToWorld>()
                     .WithNone<VertexAmountElement>()
                     .WithNone<CleanUpTerrainComponent>()
@@ -108,7 +108,7 @@ namespace DotsNav.Navmesh.Systems
                     .WithAll<PlaneComponent>()
                     .WithAll<VertexElement>()
                     .WithAll<VertexAmountElement>()
-                    .WithAll<NavmeshTerrainComponent>()
+                    .WithAll<NavmeshMinorConstraintComponent>()
                     .WithAll<LocalToWorld>()
                     .WithNone<CleanUpTerrainComponent>()
                     .Build(ref state);
@@ -230,8 +230,8 @@ namespace DotsNav.Navmesh.Systems
                         var Ecb = ecb;
                     // }.Run(_insertQuery); // .Schedule(_insertQuery, dependency);
 
-                    foreach (var (obstacle, vertices, localToWorld, entity) in SystemAPI.Query<RefRW<NavmeshObstacleComponent>, DynamicBuffer<VertexElement>, RefRO<LocalToWorld>>().WithEntityAccess()) {
-                        // void Execute(Entity entity, in NavmeshObstacleComponent obstacle, in DynamicBuffer<VertexElement> vertices, in LocalToWorld localToWorld)
+                    foreach (var (obstacle, vertices, localToWorld, entity) in SystemAPI.Query<RefRW<NavmeshMajorConstraintComponent>, DynamicBuffer<VertexElement>, RefRO<LocalToWorld>>().WithEntityAccess()) {
+                        // void Execute(Entity entity, in NavmeshMajorConstraintComponent obstacle, in DynamicBuffer<VertexElement> vertices, in LocalToWorld localToWorld)
                         // {
                             var navmesh = Data.Value.Navmesh;
                             var ltw = math.mul(Data.Value.PlaneLtwInv, localToWorld.ValueRO.Value);
@@ -312,7 +312,7 @@ namespace DotsNav.Navmesh.Systems
                     //     Ecb = ecb
                     // }.Run(_destroyTerrainQuery); // .Schedule(_destroyTerrainQuery, dependency);
 
-                    foreach (var (_, entity) in SystemAPI.Query<CleanUpTerrainComponent>().WithNone<NavmeshTerrainComponent>().WithEntityAccess()) {
+                    foreach (var (_, entity) in SystemAPI.Query<CleanUpTerrainComponent>().WithNone<NavmeshMinorConstraintComponent>().WithEntityAccess()) {
                         data.Value.Navmesh->RemoveConstraintMinor(entity);
                         ecb.RemoveComponent<CleanUpTerrainComponent>(entity);
                     }
@@ -327,8 +327,8 @@ namespace DotsNav.Navmesh.Systems
                         var Ecb = ecb;
                     // }.Run(_insertQuery); // .Schedule(_insertQuery, dependency);
 
-                    foreach (var (terrain, vertices, localToWorld, entity) in SystemAPI.Query<RefRW<NavmeshTerrainComponent>, DynamicBuffer<VertexElement>, RefRO<LocalToWorld>>().WithEntityAccess()) {
-                        // void Execute(Entity entity, in NavmeshTerrainComponent terrain, in DynamicBuffer<VertexElement> vertices, in LocalToWorld localToWorld)
+                    foreach (var (terrain, vertices, localToWorld, entity) in SystemAPI.Query<RefRW<NavmeshMinorConstraintComponent>, DynamicBuffer<VertexElement>, RefRO<LocalToWorld>>().WithEntityAccess()) {
+                        // void Execute(Entity entity, in NavmeshMinorConstraintComponent terrain, in DynamicBuffer<VertexElement> vertices, in LocalToWorld localToWorld)
                         // {
                             var navmesh = Data.Value.Navmesh;
                             var ltw = math.mul(Data.Value.PlaneLtwInv, localToWorld.ValueRO.Value);
@@ -413,7 +413,7 @@ namespace DotsNav.Navmesh.Systems
             public NativeReference<JobData> Data;
             public EntityCommandBuffer Ecb;
             [BurstDiscard]
-            void Execute(Entity entity, in NavmeshObstacleComponent obstacle, in DynamicBuffer<VertexElement> vertices, in LocalToWorld localToWorld)
+            void Execute(Entity entity, in NavmeshMajorConstraintComponent obstacle, in DynamicBuffer<VertexElement> vertices, in LocalToWorld localToWorld)
             {
                 var navmesh = Data.Value.Navmesh;
                 var ltw = math.mul(Data.Value.PlaneLtwInv, localToWorld.Value);

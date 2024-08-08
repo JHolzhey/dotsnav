@@ -143,11 +143,11 @@ The following archetypes trigger obstacle insertion:
   - DynamicBuffer&lt;VertexElement&gt;, DynamicBuffer&lt;VertexAmountElement&gt;
   - ObstacleBlobComponent
 
-Note that any obstacle requires a NavmeshObstacleComponent and or a ObstacleTreeElementComponent. Entities with static obstacle archetypes are destroyed after insertion. To destroy dynamic obstacles destroy their associated entity.
+Note that any obstacle requires a NavmeshMajorConstraintComponent and or a ObstacleTreeElementComponent. Entities with static obstacle archetypes are destroyed after insertion. To destroy dynamic obstacles destroy their associated entity.
 
 ### Agents
 General components:
-- RadiusComponent
+- AgentComponent
 
 Pathfinding related components:
 - NavmeshAgentComponent

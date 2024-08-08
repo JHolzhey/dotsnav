@@ -7,6 +7,7 @@ using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
 
+
 [ExecuteInEditMode]
 public class FunnelTest : MonoBehaviour
 {
@@ -52,7 +53,7 @@ public class FunnelTest : MonoBehaviour
         var b = true;
         for (int j = 0; j < l1.Count - 1; j++)
         {
-            l.Add(b ? new Gate {Left = l1[j], Right = l1[j + 1]} : new Gate {Left = l1[j + 1], Right = l1[j]});
+            l.Add(b ? new Gate {Left = l1[j], Right = l1[j + 1], Radius = Radius} : new Gate {Left = l1[j + 1], Right = l1[j], Radius = Radius});
             b = !b;
         }
 

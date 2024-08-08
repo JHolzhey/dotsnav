@@ -49,9 +49,9 @@ namespace DotsNav.Navmesh.Hybrid
         void IPlaneComponent.InsertObstacle(EntityManager em, Entity plane, Entity obstacle, ConstraintType constraintType)
         {
             if (constraintType == ConstraintType.Obstacle) {
-                em.AddComponentData(obstacle, new NavmeshObstacleComponent());
+                 em.AddComponentData(obstacle, new NavmeshMajorConstraintComponent());
             } else if (constraintType == ConstraintType.Terrain) {
-                em.AddComponentData(obstacle, new NavmeshTerrainComponent());
+                em.AddComponentData(obstacle, new NavmeshMinorConstraintComponent());
             }
         }
 
@@ -68,16 +68,16 @@ namespace DotsNav.Navmesh.Hybrid
             
             var plane = GetComponent<DotsNavPlane>();
 
-            UnsafeList<NavmeshMaterialType> surfaceTypes = new UnsafeList<NavmeshMaterialType>(10, Allocator.Persistent) { // TODO: Expose to Editor
-                new NavmeshMaterialType("Default", 2f, Color.gray),
-                new NavmeshMaterialType("PavedRoad", 1f, Color.blue),
-                new NavmeshMaterialType("Clay", 1.1f, Color.red),
-                new NavmeshMaterialType("Grass", 1.1f, Color.green),
-                new NavmeshMaterialType("Rock", 2f, Color.black),
-                new NavmeshMaterialType("Ladder", 1.5f, Color.yellow, 0.1f),
-                new NavmeshMaterialType("Test", 1.5f, Color.cyan),
-                new NavmeshMaterialType("Test2", 1.5f, Color.magenta),
-                new NavmeshMaterialType("Test3", 1.5f, Color.white),
+            UnsafeList<NavmeshMaterialType> materialTypes = new UnsafeList<NavmeshMaterialType>(10, Allocator.Persistent) { // TODO: Expose to Editor
+                new NavmeshMaterialType("Default", Color.gray, new (2f)),
+                new NavmeshMaterialType("PavedRoad", Color.blue, new (1f)),
+                new NavmeshMaterialType("Clay", Color.red, new (1.1f)),
+                new NavmeshMaterialType("Grass", Color.green, new (1.1f)),
+                new NavmeshMaterialType("Rock", Color.black, new (2f)),
+                new NavmeshMaterialType("Ladder", Color.yellow, new (1.5f, 0.9f)),
+                new NavmeshMaterialType("Test", Color.cyan, new (1.5f)),
+                new NavmeshMaterialType("Test2", Color.magenta, new (1.5f)),
+                new NavmeshMaterialType("Test3", Color.white, new (1.5f)),
             };
 
             Terrain terrain = Terrain.activeTerrain;
@@ -88,7 +88,7 @@ namespace DotsNav.Navmesh.Hybrid
             (
                 plane.Size,
                 ExpectedVerts,
-                surfaceTypes,
+                materialTypes,
                 terrainMesh,
                 MergePointDistance,
                 CollinearMargin

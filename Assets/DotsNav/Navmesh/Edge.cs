@@ -2,13 +2,15 @@ using Unity.Entities;
 using System.Collections.Generic;
 using Unity.Mathematics;
 using Unity.Collections.LowLevel.Unsafe;
-using UnityEngine;
+using System.Diagnostics;
+using Color = UnityEngine.Color;
+using Debug = UnityEngine.Debug;
 
 namespace DotsNav.Navmesh
 {
     public static class EdgeTypeExtensions {
         public static Edge.Type Main(this Edge.Type edgeType) => edgeType & Edge.Type.MainMask;
-        public static Edge.Type M(this Edge.Type edgeType) => edgeType.Main();
+        internal static Edge.Type M(this Edge.Type edgeType) => edgeType.Main();
         public static bool IsConstrained(this Edge.Type edgeType) => edgeType.IsMajorConstrained() || edgeType.IsMinorConstrained();
 
         // Mostly for debug;
@@ -51,7 +53,7 @@ namespace DotsNav.Navmesh
     public unsafe struct Edge : IRefable
     {
         [System.Flags]
-        public enum Type : byte {
+        public enum Type : byte { // First 4 bits are Main Type, last 4 bits are Flags
             None = 0,
 
             Obstacle,
@@ -133,13 +135,13 @@ namespace DotsNav.Navmesh
         }
 
         // TODO: Make conditional
-        public static unsafe void VerifyEdgeType(Type edgeType, bool isMajor) { // Minor edge can be any Main Type, and cannot be overwritten
+        [Conditional("UNITY_ASSERTIONS")] public static unsafe void VerifyEdgeType(Type edgeType, bool isMajor) { // Minor edge can be any Main Type, and cannot be overwritten
             Debug.Assert((isMajor && edgeType.IsMajor() && !edgeType.IsMinor() && edgeType.M().IsAnyEqualB(Type.Obstacle, Type.Link, Type.Gate, Type.Clearance))
                 || (!isMajor && edgeType.IsMinor() && !edgeType.IsMajor() && edgeType.HasNoFlagsB(Type.Overwritten)), $"isMajor: {isMajor}, edgeType: {edgeType}");
         }
-        public static unsafe void VerifyEdgeType(Type edgeType) => VerifyEdgeType(edgeType, edgeType.IsMajor());
+        [Conditional("UNITY_ASSERTIONS")] public static unsafe void VerifyEdgeType(Type edgeType) => VerifyEdgeType(edgeType, edgeType.IsMajor());
 
-        public static unsafe void VerifyEdge(Edge* e, bool isMajor) {
+        [Conditional("UNITY_ASSERTIONS")] public static unsafe void VerifyEdge(Edge* e, bool isMajor) {
             VerifyEdgeType(e->EdgeType, isMajor);
             if (isMajor) {
                 Debug.Assert(MathLib.LogicalIff(e->EdgeType.M().IsAnyEqualB(Type.Obstacle, Type.Gate, Type.Link), e->IsConstrained), $"e->EdgeType: {e->EdgeType}, e->Constrained: {e->IsConstrained}");
@@ -152,7 +154,7 @@ namespace DotsNav.Navmesh
             }
             if (e->MajorEdge != null) { Debug.Assert(e->MainEdgeType == e->MajorEdge->MainEdgeType /* || e->EdgeType.IsOverwritten() TESTING WITHOUT FIRST */, $"e->EdgeType: {e->EdgeType}, e->MajorEdge->EdgeType: {e->MajorEdge->EdgeType}"); }
         }
-        public static unsafe void VerifyEdge(Edge* e) => VerifyEdge(e, e->EdgeType.IsMajor());
+        [Conditional("UNITY_ASSERTIONS")] public static unsafe void VerifyEdge(Edge* e) => VerifyEdge(e, e->EdgeType.IsMajor());
 
 
         public float CalcSlopeCost() => -FaceTriangle().Plane.CalcWalkingSlopeCost();
@@ -173,7 +175,7 @@ namespace DotsNav.Navmesh
             {
                 if (_clearanceLeft == -1) {
                     Debug.Assert(MainEdgeType != Type.Obstacle && OPrev->MainEdgeType != Type.Obstacle, "Attempting to traverse through Obstacle");
-                    _clearanceLeft = Navmesh.GetLocalClearance(OPrev->Dest->Point, Org->Point, Dest->Point, DNext);
+                    _clearanceLeft = CalcLeftClearance();
                 }
                 return _clearanceLeft;
             }
@@ -189,13 +191,19 @@ namespace DotsNav.Navmesh
             {
                 if (_clearanceRight == -1) {
                     Debug.Assert(MainEdgeType != Type.Obstacle && LPrev->MainEdgeType != Type.Obstacle, "Attempting to traverse through Obstacle");
-                    _clearanceRight = Navmesh.GetLocalClearance(ONext->Dest->Point, Org->Point, Dest->Point, DPrev->Sym);
+                    _clearanceRight = CalcRightClearance();
                 }
                 return _clearanceRight;
             }
             internal set => _clearanceRight = value;
         }
         
+        public float CalcLeftClearance() => Navmesh.GetLocalClearance(OPrev->Dest->Point, Org->Point, Dest->Point, DNext);
+        public float CalcRightClearance() => Navmesh.GetLocalClearance(ONext->Dest->Point, Org->Point, Dest->Point, DPrev->Sym);
+
+        public float CalcLeftClearanceTest() => Navmesh.GetLocalClearanceTest(OPrev->Dest->Point, Org->Point, Dest->Point, DNext);
+        public float CalcRightClearanceTest() => Navmesh.GetLocalClearanceTest(ONext->Dest->Point, Org->Point, Dest->Point, DPrev->Sym);
+
         public readonly float DebugRawClearanceLeft => _clearanceLeft;
         public readonly float DebugRawClearanceRight => _clearanceRight;
 

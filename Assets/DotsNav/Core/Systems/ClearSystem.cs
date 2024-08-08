@@ -3,7 +3,7 @@ using Unity.Entities;
 
 namespace DotsNav.Systems
 {
-    [UpdateInGroup(typeof(DotsNavDrawingSystemGroup), OrderLast = true)]
+    [UpdateInGroup(typeof(DotsNavDrawingSystemGroup), OrderFirst = true)]
     partial class ClearSystem : SystemBase
     {
         protected override void OnUpdate()

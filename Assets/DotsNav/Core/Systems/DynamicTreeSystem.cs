@@ -27,7 +27,7 @@ namespace DotsNav.Systems
     //         _insertQuery =
     //             new SystemAPIQueryBuilder()
     //                 .WithAll<LocalToWorldTransform>()
-    //                 .WithAll<RadiusComponent>()
+    //                 .WithAll<AgentComponent>()
     //                 .WithAll<DynamicTreeElementComponent>()
     //                 .WithNone<CleanupComponent>()
     //                 .Build();
@@ -85,7 +85,7 @@ namespace DotsNav.Systems
     //         [ReadOnly] public ComponentLookup<LocalToWorld> LocalToWorldLookup;
     //         [ReadOnly] public ComponentLookup<DynamicTreeComponent> DynamicTreeLookup;
     //
-    //         void Execute(Entity entity, LocalTransform tr, RadiusComponent radius)
+    //         void Execute(Entity entity, LocalTransform tr, AgentComponent radius)
     //         {
     //             var tree = DynamicTreeLookup[Plane].Tree;
     //             var transform = math.inverse(LocalToWorldLookup[Plane].Value);
@@ -175,13 +175,13 @@ namespace DotsNav.Systems
                 .WithReadOnly(treeLookup)
                 .WithReadOnly(localToWorldLookup)
                 .WithStoreEntityQueryInField(ref _insertQuery)
-                .ForEach((Entity entity, LocalTransform tr, RadiusComponent radius, ref DynamicTreeElementComponent element) =>
+                .ForEach((Entity entity, LocalTransform tr, AgentComponent radius, ref DynamicTreeElementComponent element) =>
                 {
                     var tree = treeLookup[element.Tree].Tree;
                     element.TreeRef = tree;
                     var transform = math.inverse(localToWorldLookup[element.Tree].Value);
                     var pos = math.transform(transform, tr.Position).xz;
-                    operationsWriter.Add(tree, new TreeOperation(entity, pos, radius.Value, element.Tree));
+                    operationsWriter.Add(tree, new TreeOperation(entity, pos, radius.Radius.min, element.Tree));
                 })
                 .ScheduleParallel();
 
@@ -205,14 +205,14 @@ namespace DotsNav.Systems
                 .WithReadOnly(treeLookup)
                 .WithReadOnly(localToWorldLookup)
                 .WithStoreEntityQueryInField(ref _updateQuery)
-                .ForEach((Entity entity, LocalTransform translation, RadiusComponent radius, ref DynamicTreeElementComponent element, ref ElementSystemStateComponent state) =>
+                .ForEach((Entity entity, LocalTransform translation, AgentComponent radius, ref DynamicTreeElementComponent element, ref ElementSystemStateComponent state) =>
                 {
                     if (element.Tree == state.TreeEntity)
                     {
                         var transform = math.inverse(localToWorldLookup[state.TreeEntity].Value);
                         var pos = math.transform(transform, translation.Position).xz;
                         var displacement = pos - state.PreviousPosition;
-                        operationsWriter.Add(state.TreeRef, new TreeOperation(state.Id, pos, displacement, radius.Value));
+                        operationsWriter.Add(state.TreeRef, new TreeOperation(state.Id, pos, displacement, radius.Radius.min));
                         state.PreviousPosition = pos;
                     }
                     else
@@ -225,7 +225,7 @@ namespace DotsNav.Systems
                         state.TreeRef = newTree;
                         state.TreeEntity = element.Tree;
                         operationsWriter.Add(oldTree, new TreeOperation(state.Id));
-                        operationsWriter.Add(newTree, new TreeOperation(entity, pos, radius.Value, element.Tree, true));
+                        operationsWriter.Add(newTree, new TreeOperation(entity, pos, radius.Radius.min, element.Tree, true));
                         state.PreviousPosition = pos;
                     }
                 })

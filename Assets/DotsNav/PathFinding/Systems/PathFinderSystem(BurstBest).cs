@@ -82,7 +82,7 @@
 //                     LTWLookup = GetComponentLookup<LocalToWorld>(true),
 //                     TranslationLookup = GetComponentLookup<LocalTransform>(true),
 //                     Queries = GetComponentLookup<PathQueryComponent>(),
-//                     Radii = GetComponentLookup<RadiusComponent>(true),
+//                     Radii = GetComponentLookup<AgentComponent>(true),
 //                     PathSegments = GetBufferLookup<PathSegmentElement>(),
 //                     TriangleIds = GetBufferLookup<TriangleElement>(),
 //                     PathFinder = resources,
@@ -99,7 +99,7 @@
 //             [NativeDisableContainerSafetyRestriction]
 //             public ComponentLookup<PathQueryComponent> Queries;
 //             [NativeDisableContainerSafetyRestriction]
-//             public ComponentLookup<RadiusComponent> Radii;
+//             public ComponentLookup<AgentComponent> Radii;
 //             [NativeDisableContainerSafetyRestriction]
 //             public BufferLookup<PathSegmentElement> PathSegments;
 //             [NativeDisableContainerSafetyRestriction]

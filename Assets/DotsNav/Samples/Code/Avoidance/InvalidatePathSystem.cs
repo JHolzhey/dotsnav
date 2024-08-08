@@ -13,9 +13,9 @@ partial class InvalidatePathSystem : SystemBase
     {
         Entities
             .WithBurst()
-            .ForEach((DirectionComponent direction, RadiusComponent radius, ref PathQueryComponent query) =>
+            .ForEach((DirectionComponent direction, AgentComponent agent, ref PathQueryComponent query) =>
             {
-                if (direction.DistanceFromPathSquared > radius * radius)
+                if (direction.DistanceFromPathSquared > agent * agent) // TODO: Do we even need this code? Maybe for individual soldiers?
                     query.State = PathQueryState.Invalidated;
             })
             .ScheduleParallel();

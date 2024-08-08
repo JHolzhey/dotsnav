@@ -145,8 +145,7 @@ public unsafe struct Heightmap {
         int2 p1,
         int2 p2)
     {
-        int edge(
-            int2 a, int2 b, int2 c)
+        int edge(int2 a, int2 b, int2 c)
         {
             return (b.x - c.x) * (a.y - c.y) - (b.y - c.y) * (a.x - c.x);
         };

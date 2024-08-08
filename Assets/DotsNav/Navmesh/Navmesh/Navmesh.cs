@@ -1,5 +1,6 @@
 using System;
 using DotsNav.Collections;
+using DotsNav.Data;
 using DotsNav.Navmesh.Data;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -64,7 +65,8 @@ namespace DotsNav.Navmesh
         Deque<IntPtr> _refinementQueue;
 
         public ReadOnly<NavmeshMaterialType> MaterialTypes;
-        // internal FixedList128Bytes<float> MaterialTypeCosts;
+        public UnsafeList<NavmeshMaterialCost> DefaultMaterialCosts;
+
         internal HashSet<IntPtr> AddedOrModifiedMajorEdges; // TODO: Try making this Ptr<QuadEdge>
 
         internal readonly static Entity MinorObstacleCid = new Entity{Index = int.MinValue, Version = int.MinValue};
@@ -114,6 +116,9 @@ namespace DotsNav.Navmesh
             _refinementQueue = new Deque<IntPtr>(24, Allocator.Persistent);
 
             MaterialTypes = new ReadOnly<NavmeshMaterialType>(component.MaterialTypes.Ptr, component.MaterialTypes.Length);
+            DefaultMaterialCosts = new UnsafeList<NavmeshMaterialCost>(MaterialTypes.Length, Allocator.Persistent);
+            for (int i = 0; i < MaterialTypes.Length; i++)
+                DefaultMaterialCosts.Add(MaterialTypes[i].defaultCost);
 
             AddedOrModifiedMajorEdges = new HashSet<IntPtr>(64, Allocator.Persistent);
 
@@ -206,6 +211,18 @@ namespace DotsNav.Navmesh
 
                 InsertMinor(new Span<PlanePoint>(tri, 4), Entity.Null, float4x4.identity, Edge.Type.Terrain);
             }
+
+            // TODO: Set insignificant Terrain edges to Ignore, but crashes on start:
+            // var enumeratorMinor = GetEdgeEnumerator(false); // Now cleanup terrain by setting edges with similar cost opposite faces to Ignore
+            // while (enumeratorMinor.MoveNext())
+            // {
+            //     var edge = enumeratorMinor.Current;
+            //     if (edge->Sym != null) {
+            //         if (edge->TriangleMaterial == edge->Sym->TriangleMaterial && MathLib.IsEpsEqual(edge->TriangleSlopeCost, edge->Sym->TriangleSlopeCost, 0.1f)) {
+            //             edge->SetEdgeType(Edge.Type.Minor | Edge.Type.Ignore);
+            //         }
+            //     }
+            // }
 
             AddedOrModifiedMajorEdges.Clear();
 

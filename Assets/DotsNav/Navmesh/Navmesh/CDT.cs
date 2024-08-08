@@ -408,8 +408,7 @@ FoundEdgeMajor:
 
             if (math.lengthsq(closest->Point - p.point) <= _e * _e) {
                 //Debug.Log($"InsertPoint - Found vertex, returning it instead of inserting new. Vertex.Type: {closest->VertexType}");
-                // TODO: Is the following wrong? Explain it
-                Debug.Assert((newConstraintEdgeType.IsMinor() && closest->GetEdge(false) != null) || (newConstraintEdgeType.IsMinor() && closest->GetEdge(true) != null));
+                Debug.Assert((newConstraintEdgeType.IsMinor() && closest->GetEdge(false) != null) || (newConstraintEdgeType.IsMajor() && closest->GetEdge(true) != null));
 
                 return closest;
             }
@@ -975,7 +974,6 @@ FoundEdgeMajor:
                 Debug.Assert(edge->ContainsMajorEdge(majorEdge), $"edge->MajorEdgeType: {edge->MajorEdge->EdgeType}, majorEdge->EdgeType: {majorEdge->EdgeType}");
             }
             
-            Edge.VerifyEdge(edge, true);
             Edge.VerifyEdgeType(newEdgeType, true);
 
             edge->SetEdgeType(newEdgeType);
@@ -985,7 +983,9 @@ FoundEdgeMajor:
             UnsafeList<IntPtr> majorInMinors = new UnsafeList<IntPtr>(1, Allocator.Temp);
             if (FindMajorInMinorEdgesRecursive(edge, null, edge->Org, ref majorInMinors)) {
                 for (int i = 0; i < majorInMinors.Length; i++) {
-                    SetEdgeTypeMinor((Edge*)majorInMinors[i], Edge.Type.Minor | newEdgeType.Main(), edge);
+                    var majorInMinor = (Edge*)majorInMinors[i];
+                    SetEdgeTypeMinor(majorInMinor, Edge.Type.Minor | newEdgeType.Main(), edge);
+                    Edge.VerifyEdge(majorInMinor, false);
                 }
             }
 
@@ -1001,7 +1001,6 @@ FoundEdgeMajor:
                 Debug.Assert(edge->ContainsMajorEdge(majorEdge), $"edge->MajorEdgeType: {edge->MajorEdge->EdgeType}, majorEdge->EdgeType: {majorEdge->EdgeType}");
             }
 
-            Edge.VerifyEdge(edge, false);
             Edge.VerifyEdgeType(newEdgeType, false);
 
             edge->SetEdgeType(newEdgeType);
@@ -1232,7 +1231,7 @@ FoundEdgeMajor:
             BFSEdgesSetMaterialType(initialEdge, materialType, boundaryCid, ref _);
         }
 
-        // Giving boundaryCid of Entity.Null means the BFS will stop at any constrained edge
+        // Giving boundaryCid of Entity.Null means the BFS will stop at any constrained edge // TODO: This won't work when we have other Minor edge types than just Terrain
         void BFSEdgesSetMaterialType(Edge* initialEdge, byte materialType, Entity boundaryCid, ref UnsafeHashSet<Entity> otherOverlappingConstraints)
         {
             _openEdgeQueue.Clear();
@@ -1371,7 +1370,6 @@ FoundEdgeMajor:
                 var i = currMinorOrg->GetEdgeEnumerator(false);
                 while (i.MoveNext())
                 {
-                    Edge.VerifyEdge(i.Current, false);
                     if (i.Current->HasMajorEdge && i.Current->Sym != prevEdge && i.Current != prevEdge) {
                         if (i.Current->Dest == majorEdge->Dest) {
                             foundEdge = true; // Unnecessary, leaving for clarity
@@ -1458,7 +1456,7 @@ FoundEdgeMajor:
                 Debug.Assert(MathLib.LogicalIf(edge->Org->PointConstraints == 0, _vlistMinor.Contains((IntPtr) edge->Org)), "This vertex should already be added"); // TODO: Delete this
             }
 
-            {   // Debug to make sure _vlistMinor is valid:
+            if (_vlistMinor.Length > 0) { // Debug to make sure _vlistMinor is valid
                 for (var i = 0; i < _vlistMinor.Length; i++) {
                     for (var j = 0; j < _vlistMinor.Length; j++) {
                         if (i != j && _vlistMinor[i] == _vlistMinor[j]) { Assert.IsTrue(false, "Duplicate in _vlistMinor"); }
@@ -1541,6 +1539,7 @@ FoundEdgeMajor:
                             if (numOverlappingMajorEdges == 1) {
                                 Debug.Log("Clearing overwritten MajorInMinor -> not overwritten anymore");
                                 edge->SetOverwritten(false); // If only one incompleteMajor then it isn't overwritten anymore
+                                SetEdgeTypeMajor(edge, Edge.Type.Minor | arbitraryMajorEdge->MainEdgeType, arbitraryMajorEdge); // TODO: Make sure correct
                             } else { Debug.Log("Passing MajorInMinor to other MajorEdge -> still overwritten"); }
                             edge->MajorEdge = arbitraryMajorEdge;
                         }
@@ -1575,6 +1574,7 @@ FoundEdgeMajor:
                     _flipStackMinor.Push(edge);
                     FlipQuad(false);
                 }
+                Edge.VerifyEdge(edge, false);
             }
 
             for (var i = 0; i < _vlistMinor.Length; i++) {

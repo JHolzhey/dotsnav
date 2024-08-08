@@ -54,7 +54,7 @@ namespace DotsNav.PathFinding.Systems
                         var seq0 = destroyed[navmesh.Navmesh].Reinterpret<int>();
                         var seq1 = triangles.Reinterpret<int>();
 
-                        if (SortedSequencesContainAnIdenticalElement(seq0, seq1))
+                        if (SortedSequencesContainAnIdenticalElement(seq0, seq1)) // TODO: Only check this if navmesh has updated? Or maybe even if destroyed has changed?
                             query.State = PathQueryState.Invalidated;
                     }
 
@@ -76,13 +76,13 @@ namespace DotsNav.PathFinding.Systems
 
             /* Dependency =  */new FindPathJob
                 {
-                    Agents = buffer.AsArray(),
-                    NavmeshElements = GetComponentLookup<NavmeshAgentComponent>(true),
+                    Entities = buffer.AsArray(),
+                    NavmeshAgents = GetComponentLookup<NavmeshAgentComponent>(true),
                     Navmeshes = GetComponentLookup<NavmeshComponent>(true),
                     LTWLookup = GetComponentLookup<LocalToWorld>(true),
                     TranslationLookup = GetComponentLookup<LocalTransform>(true),
                     Queries = GetComponentLookup<PathQueryComponent>(),
-                    Radii = GetComponentLookup<RadiusComponent>(true),
+                    Agents = GetComponentLookup<AgentComponent>(true),
                     PathSegments = GetBufferLookup<PathSegmentElement>(),
                     TriangleIds = GetBufferLookup<TriangleElement>(),
                     PathFinder = resources,
@@ -91,15 +91,15 @@ namespace DotsNav.PathFinding.Systems
         }
 
 
-
+        // TODO: Turn this into an AgentAspect.Lookup
         struct FindPathJob : IJob //ParallelForDefer
         {
             [ReadOnly]
-            public NativeArray<Entity> Agents;
+            public NativeArray<Entity> Entities;
             [NativeDisableContainerSafetyRestriction]
             public ComponentLookup<PathQueryComponent> Queries;
             [NativeDisableContainerSafetyRestriction]
-            public ComponentLookup<RadiusComponent> Radii;
+            public ComponentLookup<AgentComponent> Agents;
             [NativeDisableContainerSafetyRestriction]
             public BufferLookup<PathSegmentElement> PathSegments;
             [NativeDisableContainerSafetyRestriction]
@@ -110,7 +110,7 @@ namespace DotsNav.PathFinding.Systems
             int _threadId;
 
             [ReadOnly]
-            public ComponentLookup<NavmeshAgentComponent> NavmeshElements;
+            public ComponentLookup<NavmeshAgentComponent> NavmeshAgents;
             [ReadOnly]
             public ComponentLookup<NavmeshComponent> Navmeshes;
             [ReadOnly]
@@ -120,24 +120,24 @@ namespace DotsNav.PathFinding.Systems
 
             public unsafe void Execute(/* int index */)
             {
-                for (int index = 0; index < Agents.Length; index++) {
+                for (int index = 0; index < Entities.Length; index++) {
                     // Assert.IsTrue(_threadId > 0 && _threadId <= PathFinder.Instances.Length);
-                    var agent = Agents[index];
-                    var query = Queries[agent];
-                    var segments = PathSegments[agent];
+                    var entity = Entities[index];
+                    var query = Queries[entity];
+                    var segments = PathSegments[entity];
                     segments.Clear();
-                    var ids = TriangleIds[agent];
+                    var ids = TriangleIds[entity];
                     ids.Clear();
                     var instanceIndex = _threadId - 1;
                     var instance = PathFinder.Instances[0];
 
-                    var navmeshEntity = NavmeshElements[agent].Navmesh;
+                    var navmeshEntity = NavmeshAgents[entity].Navmesh;
                     var ltw = math.inverse(LTWLookup[navmeshEntity].Value);
-                    var pos = TranslationLookup[agent];
-                    query.State = instance.FindPath(math.transform(ltw, pos.Position).xz, math.transform(ltw, query.To).xz, Radii[agent], segments, ids, Navmeshes[navmeshEntity].Navmesh, out _);
+                    var pos = TranslationLookup[entity];
+                    query.State = instance.FindPath(math.transform(ltw, pos.Position).xz, math.transform(ltw, query.To).xz, Agents[entity], Navmeshes[navmeshEntity].Navmesh, segments, ids, out _);
                     if (query.State == PathQueryState.PathFound)
                         ++query.Version;
-                    Queries[agent] = query;
+                    Queries[entity] = query;
                 }
             }
         }

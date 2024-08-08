@@ -1,6 +1,8 @@
+using DotsNav.Drawing;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
-using Debug = UnityEngine.Debug;
+using UnityEngine;
 
 namespace DotsNav.Navmesh
 {
@@ -52,9 +54,66 @@ namespace DotsNav.Navmesh
         }
 
 
-        // Will return 0 if edge is constrained - TODO: I don't think this is true, verify it
-        internal static float GetLocalClearance(double2 a, double2 b, double2 c, Edge* edge)
+        internal static float GetLocalClearanceTest(float2 a, float2 b, float2 c, Edge* initialEdge)
         {
+            Arrow.Draw(MathLib.Midpoint(a.XOY(), b.XOY()), MathLib.Midpoint(c.XOY(), b.XOY()), 0.03f, Color.yellow);
+            var ba_dir = math.normalize(a - b);
+            var bc_dir = math.normalize(c - b);
+
+            var b_a = b + ba_dir * 0.01f;
+            var b_c = b + bc_dir * 0.01f;
+
+            var a_ext = b + ba_dir * 100f;
+            var c_ext = b + bc_dir * 100f;
+
+            UnsafeCircularQueue<Ptr<Edge>> _openEdgeQueue = new UnsafeCircularQueue<Ptr<Edge>>(1, Allocator.Temp);
+            UnsafeHashSet<int> quadEdgeIdsVisited = new UnsafeHashSet<int>(1, Allocator.Temp);
+
+            float closestConstraint = float.MaxValue;
+            initialEdge = initialEdge->Sym;
+            _openEdgeQueue.Enqueue(initialEdge);
+
+            float3 offsetInitial = MathLib.CalcTangentToNormal(initialEdge->Dest->Point3D - initialEdge->Org->Point3D)*0.03f + new float3(0,0.1f,0);
+            Line.Draw(initialEdge->Org->Point3D + offsetInitial, initialEdge->Dest->Point3D + offsetInitial, Color.blue);
+
+            while (_openEdgeQueue.Length > 0)
+            {
+                Edge* edge = _openEdgeQueue.Dequeue();
+                if (!quadEdgeIdsVisited.Contains(edge->QuadEdgeId)) {
+                    quadEdgeIdsVisited.Add(edge->QuadEdgeId);
+
+                    if (math.all(edge->Org->Point == b) || math.all(edge->Dest->Point == b)) {
+                        continue;
+                    }
+
+                    if ((Math.Ccw(b, c, edge->Org->Point) && !Math.Ccw(b, a, edge->Org->Point)) // If Org or Dest is in the clearance 'frustum'
+                        || (Math.Ccw(b, c, edge->Dest->Point) && !Math.Ccw(b, a, edge->Dest->Point))
+                        || (Math.IntersectSegSeg(b_c, c_ext, edge->Org->Point, edge->Dest->Point) || Math.IntersectSegSeg(b_a, a_ext, edge->Org->Point, edge->Dest->Point)))
+                    {
+                        float distance = math.length(Math.ClosestPointOnLineSegment(b, edge->Org->Point, edge->Dest->Point) - b);
+                        if (distance < closestConstraint) {
+                            if (edge->MainEdgeType == Edge.Type.Obstacle) {
+                                closestConstraint = distance;
+                            }
+                            _openEdgeQueue.Enqueue(edge->ONext);
+                            _openEdgeQueue.Enqueue(edge->DPrev);
+                        }
+
+                        float3 offset = MathLib.CalcTangentToNormal(edge->Dest->Point3D - edge->Org->Point3D)*0.03f + new float3(0,0.1f,0);
+                        Line.Draw(edge->Org->Point3D + offset, edge->Dest->Point3D + offset, Color.white + Color.yellow);
+                    }
+                }
+            }
+
+
+            return closestConstraint;
+        }
+
+
+        // Will return 0 if edge is constrained - TODO: I don't think this is true, verify it
+        internal static float GetLocalClearance(float2 a, float2 b, float2 c, Edge* edge)
+        {
+            Arrow.Draw(MathLib.Midpoint(a.XOY(), b.XOY()), MathLib.Midpoint(c.XOY(), b.XOY()), 0.03f, Color.yellow);
             var lba = math.lengthsq(a - b);
             var lbc = math.lengthsq(c - b);
             var clearance = math.sqrt(math.min(lba, lbc));
@@ -235,13 +294,13 @@ namespace DotsNav.Navmesh
         static Edge* CheckTriForConstraint(Edge* edge, double clearance, float2 corner, float2 mirror)
         {
             edge = edge->RNext;
-            var result = CheckEdgeForContraint(edge, clearance, corner, mirror);
+            var result = CheckEdgeForConstraint(edge, clearance, corner, mirror);
             if (result != null)
                 return result;
-            return CheckEdgeForContraint(edge->RNext, clearance, corner, mirror);
+            return CheckEdgeForConstraint(edge->RNext, clearance, corner, mirror);
         }
 
-        static Edge* CheckEdgeForContraint(Edge* edge, double clearance, float2 corner, float2 mirror)
+        static Edge* CheckEdgeForConstraint(Edge* edge, double clearance, float2 corner, float2 mirror)
         {
             var s1 = edge->Org->Point;
             var s2 = edge->Dest->Point;
@@ -258,6 +317,9 @@ namespace DotsNav.Navmesh
 
         public static Edge* TryGetConstraint(double clearance, double2 corner, Edge* edge)
         {
+            float3 offset = MathLib.CalcTangentToNormal(edge->Dest->Point3D - edge->Org->Point3D)*0.03f + new float3(0,0.1f,0);
+            Line.Draw(edge->Org->Point3D + offset, edge->Dest->Point3D + offset, Color.blue);
+
             if (edge->MainEdgeType == Edge.Type.Obstacle) //edge->Constrained) // todo should we check distance here? We do so for any other constraint we find
                 return edge;
             return CheckTriForConstraint(edge, clearance, corner);
@@ -266,19 +328,24 @@ namespace DotsNav.Navmesh
         static Edge* CheckTriForConstraint(Edge* edge, double clearance, double2 corner)
         {
             edge = edge->RNext;
-            var result = CheckEdgeForContraint(edge, clearance, corner);
+            var result = CheckEdgeForConstraint(edge, clearance, corner);
             if (result != null)
                 return result;
-            return CheckEdgeForContraint(edge->RNext, clearance, corner);
+            return CheckEdgeForConstraint(edge->RNext, clearance, corner);
         }
 
-        static Edge* CheckEdgeForContraint(Edge* edge, double clearance, double2 corner)
+        static Edge* CheckEdgeForConstraint(Edge* edge, double clearance, double2 corner)
         {
             var s1 = edge->Org->Point;
             var s2 = edge->Dest->Point;
 
-            if (Math.IntersectSegCircle(s1, s2, corner, clearance) != 2)
+            float3 offset = MathLib.CalcTangentToNormal(edge->Dest->Point3D - edge->Org->Point3D)*0.01f + new float3(0,0.1f,0);
+            Line.Draw(edge->Org->Point3D + offset, edge->Dest->Point3D + offset, Color.white);
+
+            if (Math.IntersectSegCircle(s1, s2, corner, clearance) != 2) {
+                Circle.Draw(((float2)corner).ToXxY(), (float)clearance + 0.01f, Color.blue);
                 return null;
+            }
 
             if (edge->MainEdgeType == Edge.Type.Obstacle) // edge->Constrained)
                 return edge;

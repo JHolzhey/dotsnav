@@ -60,6 +60,24 @@ public static class TerrainExtensions
         return new Heightmap(heightmapData.LengthX, heightmapData.LengthY, heightmapData.flatArray, terrain.terrainData.heightmapScale, terrain.GetPosition());
     }
 
+    /* public static Heightmap GetNormalData(this Terrain terrain, Allocator allocator) {
+        TerrainData terrainData = terrain.terrainData;
+        int heightmapResolution = terrainData.heightmapResolution;
+        float[,] heights = terrainData.GetHeights(0, 0, heightmapResolution, heightmapResolution);
+
+        Native2DArray<float> heightmapData = new Native2DArray<float>(heightmapResolution+1, heightmapResolution+1, allocator);
+
+        for (int x = 0; x < heightmapResolution; x++) {
+            
+            for (int y = 0; y < heightmapResolution; y++) {
+                heightmapData[x, y] = heights[y, x];
+            }
+        }
+        float3 heightmapScale = terrain.terrainData.heightmapScale;
+        float3 offset = (float3)terrain.GetPosition() + heightmapScale.XOZ()/2f;
+        return new Heightmap(heightmapData.LengthX, heightmapData.LengthY, heightmapData.flatArray, heightmapScale, offset);
+    } */
+
     public static void SimplifyTerrainMesh(this Terrain terrain, float maxError, float3 scaleFactor, out UnsafeList<float3> points, out UnsafeList<int3> triangles) {
         Triangulator triangulator = new Triangulator(terrain.GetHeightMapData(Allocator.Temp));
         triangulator.Run(maxError, int.MaxValue, int.MaxValue);

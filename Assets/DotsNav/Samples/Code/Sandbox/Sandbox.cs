@@ -62,8 +62,11 @@ namespace DotsNav.Samples.Code
             var size = _start.localScale.x;
             var s = new Vector3(size, size, size);
             _goal.localScale = s;
-            _agent.GetComponent<DotsNavAgent>().Radius = size / 2;
+            _agent.GetComponent<DotsNavAgent>().MinRadius = size / 2;
+            _agent.GetComponent<DotsNavAgent>().MaxRadius = size / 2;
 
+
+            // Old and unused:
             float3 scaleFactor = 0.95f * (float3)Plane.Size.ToXxY(10f) / (float3)Terrain.activeTerrain.terrainData.size;
 
             Terrain.activeTerrain.SimplifyTerrainMesh(0.005f, new float3(1f), out UnsafeList<float3> points, out UnsafeList<int3> triangles);
@@ -360,7 +363,8 @@ namespace DotsNav.Samples.Code
                     var s = new Vector3(size, size, size);
                     _start.localScale = s;
                     _goal.localScale = s;
-                    _agent.GetComponent<DotsNavAgent>().Radius = size / 2;
+                    _agent.GetComponent<DotsNavAgent>().MaxRadius = size / 2;
+                    _agent.GetComponent<DotsNavAgent>().MinRadius = math.min(0.1f, size / 2);
                 }
 
                 if (_target != null && Input.GetMouseButton(0) && !Input.GetMouseButtonDown(0) && mouseDelta != Vector2.zero)

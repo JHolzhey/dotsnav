@@ -91,14 +91,41 @@ public struct FloatWithFriend<TFriend> where TFriend : unmanaged {
     public FloatWithFriend(float Float, TFriend Friend) { this.Float = Float; this.Friend = Friend; }
 }
 [Serializable] public struct FloatRange {
-    public float min; public float max;
+    public float min;
+    public float max;
     public FloatRange(float min, float max) { this.min = min; this.max = max; }
     public readonly float Mid => (max - min)/2f;
+
+    public static FloatRange operator +(FloatRange a, FloatRange b) => new(a.min + b.min, a.max + b.max);
+    public static FloatRange operator -(FloatRange a, FloatRange b) => new(a.min - b.min, a.max - b.max);
+    public static FloatRange operator *(FloatRange a, FloatRange b) => new(a.min * b.min, a.max * b.max);
+    public static FloatRange operator /(FloatRange a, FloatRange b) => new(a.min / b.min, a.max / b.max);
+
+    public static FloatRange operator +(FloatRange a, float b) => new(a.min + b, a.max + b);
+    public static FloatRange operator -(FloatRange a, float b) => new(a.min - b, a.max - b);
+    public static FloatRange operator *(FloatRange a, float b) => new(a.min * b, a.max * b);
+    public static FloatRange operator /(FloatRange a, float b) => new(a.min / b, a.max / b);
+
+    public static FloatRange operator +(float a, FloatRange b) => new(a + b.min, a + b.max);
+    public static FloatRange operator *(float a, FloatRange b) => new(a * b.min, a * b.max);
 }
 [Serializable] public struct IntRange {
     public int min; public int max;
     public IntRange(int min, int max) { this.min = min; this.max = max; }
     public readonly int Mid => (max - min)/2;
+
+    public static IntRange operator +(IntRange a, IntRange b) => new(a.min + b.min, a.max + b.max);
+    public static IntRange operator -(IntRange a, IntRange b) => new(a.min - b.min, a.max - b.max);
+    public static IntRange operator *(IntRange a, IntRange b) => new(a.min * b.min, a.max * b.max);
+    public static IntRange operator /(IntRange a, IntRange b) => new(a.min / b.min, a.max / b.max);
+
+    public static IntRange operator +(IntRange a, int b) => new(a.min + b, a.max + b);
+    public static IntRange operator -(IntRange a, int b) => new(a.min - b, a.max - b);
+    public static IntRange operator *(IntRange a, int b) => new(a.min * b, a.max * b);
+    public static IntRange operator /(IntRange a, int b) => new(a.min / b, a.max / b);
+
+    public static IntRange operator +(int a, IntRange b) => new(a + b.min, a + b.max);
+    public static IntRange operator *(int a, IntRange b) => new(a * b.min, a * b.max);
 }
 [Serializable] public struct IntRect {
     public int xMin; public int yMin; public int xMax; public int yMax;
@@ -258,7 +285,7 @@ public static class MathLib
 
     public static int ReverseIndex(int index, int listSize) => listSize - 1 - index;
     public static int NextIndex(int index, int listSize) => (index + 1) % listSize;
-    public static int PrevIndex(int index, int listSize) => ClampIndexLoop(index - 1, listSize); // Not actually mod operator, so need to ClampIndexLoop
+    public static int PrevIndex(int index, int listSize) => (index + listSize - 1) % listSize; //ClampIndexLoop(index - 1, listSize); // Not actually mod operator, so need to ClampIndexLoop
     // Clamp list indices - Will even work if index is larger/smaller than listSize, so can loop multiple times
     public static int ClampIndexLoop(int index, int listSize) => smod(index, listSize);
 
@@ -370,7 +397,7 @@ public static class MathLib
         float constants = math.dot(lineOrigin, planeNormal);
         float coefficients = math.dot(lineDirection, planeNormal);
 
-        if (IsEpsEqual(math.abs(coefficients), 0f, 0.001f)) { // Line and Plane are parallel, no intersection
+        if (IsEpsEqual(coefficients, 0f, 0.001f)) { // Line and Plane are parallel, no intersection
             distanceAlongLine = 0f;
             pointOnPlane = lineOrigin;
             return false;
@@ -402,7 +429,7 @@ public static class MathLib
     }
 
     // TODO: Untested:
-    public static bool IsPointWithinSegProjFast(float3 point, float3 segStart, float3 segEnd) {
+    public static bool IsPointWithinSegProjFast(float3 point, float3 segStart, float3 segEnd) { // TODO: This one is slower than the below
         float3 segDirection = math.normalize(segEnd - segStart);
         return IsPointInFrontOfPlane(point, segDirection, segStart) && IsPointInFrontOfPlane(point, -segDirection, segEnd);
     }
@@ -414,7 +441,9 @@ public static class MathLib
 
     // TODO: Unfinished - Implementation of this within Habrador Geometry
     public static bool IsPointWithinSegProj(float3 point, float3 segStart, float3 segEnd, out float3 nearestPointOnSeg) {
-        return IsPointWithinRayProj(point, segStart, math.normalize(segEnd - segStart), math.length(segEnd - segStart), out nearestPointOnSeg);
+        float3 segVector = segEnd - segStart;
+        float segLength = math.length(segEnd - segStart);
+        return IsPointWithinRayProj(point, segStart, segVector / segLength, segLength, out nearestPointOnSeg);
     }
     public static bool IsPointWithinRayProj(float3 point, float3 rayStart, float3 rayDirection, float rayLength, out float3 nearestPointOnRay) {
         nearestPointOnRay = NearestPointOnRayToPoint(point, rayStart, rayDirection, rayLength, out float _, out bool wasClamped);
@@ -1030,6 +1059,7 @@ public static class MathLib
         return badEdgeIndices.IsEmpty;
     }
 
+
     public static float DistanceAlongLineNearestToPoint(float3 point, float3 lineOrigin, float3 lineDirection) {
         float3 lineOriginToPoint = point - lineOrigin;
         return math.dot(lineOriginToPoint, lineDirection);
@@ -1038,45 +1068,84 @@ public static class MathLib
         distanceAlongLine = DistanceAlongLineNearestToPoint(point, lineOrigin, lineDirection);
         return lineOrigin + (lineDirection * distanceAlongLine);
     }
-    public static float3 NearestPointOnSegToPoint(float3 point, float3 segStart, float3 segEnd, out float distanceAlongSeg, out bool wasClamped) {
-        return NearestPointOnRayToPoint(point, segStart, math.normalize(segEnd - segStart), math.length(segEnd - segStart), out distanceAlongSeg, out wasClamped);
-    }
     public static float3 NearestPointOnRayToPoint(float3 point, float3 rayStart, float3 rayDirection, float rayLength, out float distanceAlongRay, out bool wasClamped) {
         float distanceAlongRayLine = DistanceAlongLineNearestToPoint(point, rayStart, rayDirection);
         distanceAlongRay = math.clamp(distanceAlongRayLine, 0, rayLength);
         wasClamped = distanceAlongRay != distanceAlongRayLine;
         return rayStart + (rayDirection * distanceAlongRay);
-
-        // float3 rayStartToPoint = point - rayStart;
-        // float dotDistanceAlongRay = math.dot(rayStartToPoint, rayDirection);
-        // distanceAlongRay = math.clamp(dotDistanceAlongRay, 0, rayLength);
-        // wasClamped = dotDistanceAlongRay != distanceAlongRay;
-        // return rayStart + (rayDirection * distanceAlongRay);
+    }
+    public static float3 NearestPointOnSegToPoint(float3 point, float3 segStart, float3 segEnd, out float distanceAlongSeg, out bool wasClamped) {
+        float3 segVector = segEnd - segStart;
+        float segLength = math.length(segEnd - segStart);
+        return NearestPointOnRayToPoint(point, segStart, segVector / segLength, segLength, out distanceAlongSeg, out wasClamped);
     }
 
+
+
     // https://math.stackexchange.com/q/3436386
-    public static float3 NearestPointOnLine1ToLine2(float3 line1Point, float3 line1Direction, float3 line2Point, float3 line2Direction, out float distanceAlongLine1)
-    {
+    public static float DistanceAlongLine1NearestToLine2(float3 line1Point, float3 line1Direction, float3 line2Point, float3 line2Direction) {
+        Debug.Assert(IsNormalized(line1Direction));
         float3 posDiff = line1Point - line2Point;
         float3 crossNormal = math.normalize(math.cross(line1Direction, line2Direction));
         float3 rejection = posDiff - math.project(posDiff, line2Direction) - math.project(posDiff, crossNormal);
-        distanceAlongLine1 = -math.length(rejection) / math.dot(line1Direction, math.normalize(rejection));
+        float rejectionLength = math.length(rejection);
+        return -rejectionLength / math.dot(line1Direction, rejection / rejectionLength); // Equivalent to normalize(rejection)
+    }
+    public static float3 NearestPointOnLine1ToLine2(float3 line1Point, float3 line1Direction, float3 line2Point, float3 line2Direction, out float distanceAlongLine1) {
+        distanceAlongLine1 = DistanceAlongLine1NearestToLine2(line1Point, line1Direction, line2Point, line2Direction);
         return line1Point + line1Direction * distanceAlongLine1;
     }
     // Abstract below with the above
     public static float3 NearestPointOnRayToLine(float3 rayStart, float3 rayDirection, float rayLength, float3 linePoint, float3 lineDirection, out float distanceAlongRay) {
-        NearestPointOnLine1ToLine2(rayStart, rayDirection, linePoint, lineDirection, out distanceAlongRay);
+        distanceAlongRay = DistanceAlongLine1NearestToLine2(rayStart, rayDirection, linePoint, lineDirection);
         return rayStart + rayDirection * math.clamp(distanceAlongRay, 0, rayLength);
+    }
+    public static float3 NearestPointOnSegToLine(float3 segStart, float3 segEnd, float3 linePoint, float3 lineDirection, out float distanceAlongSeg) {
+        float3 segVector = segEnd - segStart;
+        float segLength = math.length(segEnd - segStart);
+        return NearestPointOnRayToLine(segStart, segVector / segLength, segLength, linePoint, lineDirection, out distanceAlongSeg);
+    }
+
+
+    public static float ShortestDistanceBtwLines(float3 line1Direction, float3 line2Direction, float3 arbitraryPoint1ToPoint2Vector) {
+        float3 crossNormal = math.normalize(math.cross(line1Direction, line2Direction));
+        return math.dot(crossNormal, -arbitraryPoint1ToPoint2Vector);
     }
 
     public static float ShortestDistanceBtwLines(float3 line1Direction, float3 line2Direction, float3 line1Point, float3 line2Point) {
         return ShortestDistanceBtwLines(line1Direction, line2Direction, line2Point - line1Point);
     }
 
-    public static float ShortestDistanceBtwLines(float3 line1Direction, float3 line2Direction, float3 arbitraryPoint1ToPoint2Vector) {
-        float3 crossNormal = math.normalize(math.cross(line1Direction, line2Direction));
-        return math.dot(crossNormal, -arbitraryPoint1ToPoint2Vector);
+
+    public static float2 IsLineIntersecting(float2 A, float2 B, float2 C, float2 D)
+    {
+        // Line AB represented as a1x + b1y = c1
+        float a1 = B.y - A.y;
+        float b1 = A.x - B.x;
+        float c1 = a1 * A.x  + b1 * A.y;
+    
+        // Line CD represented as a2x + b2y = c2
+        float a2 = D.y - C.y;
+        float b2 = C.x - D.x;
+        float c2 = a2 * C.x + b2 * C.y;
+    
+        float determinant = a1*b2 - a2*b1;
+    
+        if (determinant == 0)
+        {
+            // The lines are parallel. This is simplified
+            // by returning a pair of FLT_MAX
+            return float2.zero;
+        }
+        else
+        {
+            float x = (b2*c1 - b1*c2)/determinant;
+            float y = (a1*c2 - a2*c1)/determinant;
+            return new float2(x, y);
+        }
     }
+
+
 
     public static bool IsCapsulesIntersecting(float3 start1, float3 end1, float length1, float radius1, float3 start2, float3 end2, float length2, float radius2, out float distanceAlongRay, out float3 nearestPoint) {
         return IsRayAACapsuleIntersecting(start1, end1, length1, start2, end2, length2, radius1 + radius2, out distanceAlongRay, out nearestPoint);

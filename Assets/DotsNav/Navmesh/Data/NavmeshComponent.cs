@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
@@ -9,13 +8,11 @@ namespace DotsNav.Navmesh.Data
 {
     public struct NavmeshMaterialType {
         public FixedString32Bytes name;
-        public readonly float cost;
-        public readonly float slopeCostFactor;
+        public readonly DotsNav.Data.NavmeshMaterialCost defaultCost;
         public readonly UnityEngine.Color color;
-        public NavmeshMaterialType(FixedString32Bytes name, float cost, UnityEngine.Color color, float slopeCostFactor = 1f) {
+        public NavmeshMaterialType(FixedString32Bytes name, UnityEngine.Color color, DotsNav.Data.NavmeshMaterialCost defaultCost) {
             this.name = name;
-            this.cost = cost;
-            this.slopeCostFactor = slopeCostFactor;
+            this.defaultCost = defaultCost;
             this.color = color;
         }
     }

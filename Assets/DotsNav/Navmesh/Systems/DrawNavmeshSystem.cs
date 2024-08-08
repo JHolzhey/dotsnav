@@ -23,9 +23,13 @@ namespace DotsNav.Navmesh.Systems
         NativeList<Pair<Ptr<Edge>, float4>> outputTriangles = new NativeList<Pair<Ptr<Edge>, float4>>(10, Allocator.Persistent);
         NativeHashSet<int> closedMinorTriangles = new NativeHashSet<int>(10, Allocator.Persistent);
 
+        Camera camera;
+
+
         [BurstDiscard]
         protected override void OnCreate()
         {
+            camera = Camera.main;
             for (int i = 0; i < debugTris.Length; i++) { debugTris[i] = CommonLib.CreatePrimitive(PrimitiveType.Quad, float3.zero, new float3(1f), default); }
         }
 
@@ -52,7 +56,12 @@ namespace DotsNav.Navmesh.Systems
             outputTriangles.Clear();
             closedMinorTriangles.Clear();
 
-            new DrawNavmeshJob{ outputMinorTriangles = outputTriangles, closedMinorTriangles = closedMinorTriangles }.Schedule();
+            new DrawNavmeshJob{
+                mousePos = camera.ScreenToWorldPoint(Input.mousePosition).xz(),
+                outputMinorTriangles = outputTriangles, closedMinorTriangles = closedMinorTriangles,
+                isLeftControl = Input.GetKey(KeyCode.LeftControl),
+                isLeftAlt = Input.GetKey(KeyCode.LeftAlt),
+            }.Schedule();
             DotsNavRenderer.Handle.Data = JobHandle.CombineDependencies(DotsNavRenderer.Handle.Data, CheckedStateRef.Dependency);
         }
 
@@ -81,16 +90,18 @@ namespace DotsNav.Navmesh.Systems
         {
             public NativeList<Pair<Ptr<Edge>, float4>> outputMinorTriangles;
             public NativeHashSet<int> closedMinorTriangles;
+            public float2 mousePos;
+            public bool isLeftControl;
+            public bool isLeftAlt;
 
             [BurstDiscard]
-            void Execute(NavmeshComponent navmesh, LocalToWorld ltw, NavmeshDrawComponent data)
+            void Execute(NavmeshComponent navmesh, LocalToWorld ltw, NavmeshDrawComponent Draw)
             {
-                if (data.DrawMode == DrawMode.None || navmesh.Navmesh == null)
+                if (Draw.DrawMode == DrawMode.None || navmesh.Navmesh == null)
                     return;
 
                 var lines = new NativeList<Line>(navmesh.Navmesh->Vertices * 3, Allocator.Temp);
 
-                var enumeratorMinor = navmesh.Navmesh->GetEdgeEnumerator(false);
 
                 /* foreach (IntPtr vertex in navmesh.Navmesh->_verticesSeq) { // TODO: Commented out for performance reasons
                     Vertex* vert = (Vertex*) vertex;
@@ -100,12 +111,18 @@ namespace DotsNav.Navmesh.Systems
                     }
                 } */
 
+                var enumeratorMinor = navmesh.Navmesh->GetEdgeEnumerator(false);
+
+                Edge* closestEdgeToMouse = default;
+                float edgeToMouseMinDistance = float.MaxValue;
+
                 int numMinorEdges = 0;
                 int minorLefts = 0;
                 int minorRights = 0;
                 while (enumeratorMinor.MoveNext())
                 {
                     var edge = enumeratorMinor.Current;
+
                     Debug.Assert(edge->_indexInQuadEdge == 0 || edge->_indexInQuadEdge == 1, $"edge->_indexInQuadEdge: {edge->_indexInQuadEdge}");
                     numMinorEdges++;
 
@@ -137,8 +154,8 @@ namespace DotsNav.Navmesh.Systems
                     }
 
 
-                    if (data.DrawMode == DrawMode.None || data.DrawMode == DrawMode.ConstrainedNoTerrain || data.DrawMode == DrawMode.BothNoTerrain
-                        || (data.DrawMode == DrawMode.Constrained && !edge->IsConstrained))
+                    if (Draw.DrawMode == DrawMode.None || Draw.DrawMode == DrawMode.ConstrainedNoTerrain || Draw.DrawMode == DrawMode.BothNoTerrain
+                        || (Draw.DrawMode == DrawMode.Constrained && !edge->IsConstrained))
                         // && edge->IsConstrained && edge->QuadEdge->Crep.Length == 1 && edge->QuadEdge->Crep[0] == Entity.Null)
                         continue;
 
@@ -152,6 +169,14 @@ namespace DotsNav.Navmesh.Systems
                     float3 tangent = MathLib.CalcTangentToNormal(direction);
                     float3 leftOffset = 0.0005f * tangent * (edge->HasMajorEdge ? 1f : 0);
                     lines.Add(new Line(a + leftOffset + direction*0.001f, b + leftOffset - direction*0.001f, c));
+
+
+                    float2 point = Math.ClosestPointOnLineSegment(mousePos, edge->Org->Point, edge->Dest->Point);
+                    float distanceToMouse = math.length(mousePos - point);
+                    if (distanceToMouse < edgeToMouseMinDistance) {
+                        edgeToMouseMinDistance = distanceToMouse;
+                        closestEdgeToMouse = Math.Ccw(edge->Org->Point, edge->Dest->Point, mousePos) ? edge : edge->Sym;
+                    }
 
 
                     // Asserting Major Edges:
@@ -197,9 +222,33 @@ namespace DotsNav.Navmesh.Systems
                 // Debug.Log($"Minor Rights: {minorRights}");
 
 
+                // Debug visual for local clearance:
+                if (isLeftAlt && closestEdgeToMouse != null) {
+                    float3 offset = closestEdgeToMouse->Seg().Right*0.02f + new float3(0, 0.1f, 0);
+                    lines.Add(new Line(closestEdgeToMouse->Seg().start + offset, closestEdgeToMouse->Seg().end + offset, Color.magenta));
+                    // Debug.Log($"Clearance Left: {closestEdgeToMouse->ClearanceLeft}"); //, Clearance Right: {closestEdgeToMouse->ClearanceRight}");
+
+                    DrawPoint(ref lines, closestEdgeToMouse->Org->Point, Color.magenta, 0.1f);
+
+                    float clearance = isLeftControl ? closestEdgeToMouse->CalcLeftClearanceTest() : closestEdgeToMouse->CalcRightClearanceTest();
+                    if (clearance != math.INFINITY) {
+                        float3 center = closestEdgeToMouse->Org->Point3D;
+                        center.y = 0;
+                        const int res = 24;
+                        var q = Quaternion.AngleAxis(360f / res, Vector3.up);
+                        float3 currentArm = new Vector3(0, 0, clearance);
+
+                        for (var i = 0; i < res; i++)
+                        {
+                            float3 nextArm = q * currentArm;
+                            lines.Add(new Line(center + currentArm + new float3(0,0.1f,0), center + nextArm + new float3(0,0.1f,0), Color.magenta));
+                            currentArm = nextArm;
+                        }
+                    }
+                }
 
 
-                var enumerator = navmesh.Navmesh->GetEdgeEnumerator(true);
+
 
                 /* foreach (IntPtr vertex in navmesh.Navmesh->_verticesSeq) { // TODO: Commented out for performance reasons
                     Vertex* vert = (Vertex*) vertex;
@@ -208,6 +257,8 @@ namespace DotsNav.Navmesh.Systems
                         DrawPoint(ref lines, vert->Point, Color.green);
                     }
                 } */
+
+                var enumerator = navmesh.Navmesh->GetEdgeEnumerator(true);
 
                 int majorLefts = 0;
                 int majorRights = 0;
@@ -218,7 +269,7 @@ namespace DotsNav.Navmesh.Systems
 
                     Debug.Assert(edge->EdgeType.IsMajor(), $"edge->EdgeType: {edge->EdgeType}");
 
-                    if (data.DrawMode == DrawMode.None || (data.DrawMode == DrawMode.Constrained && !edge->IsConstrained))
+                    if (Draw.DrawMode == DrawMode.None || (Draw.DrawMode == DrawMode.Constrained && !edge->IsConstrained))
                         continue;
 
                     Color c = edge->EdgeType.GetDebugColor();

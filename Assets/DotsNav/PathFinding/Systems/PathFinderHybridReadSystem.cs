@@ -21,10 +21,10 @@ namespace DotsNav.PathFinding.Systems
 
             Entities
                 .WithoutBurst()
-                .ForEach((DotsNavPathFindingAgent hybrid, ref PathQueryComponent agent, ref LocalTransform translation, ref AgentDrawComponent drawData) =>
+                .ForEach((DotsNavPathFindingAgent hybrid, ref PathQueryComponent query, ref LocalTransform translation, ref AgentDrawComponent drawData) =>
                 {
-                    agent.State = hybrid.State;
-                    agent.To = hybrid.Goal;
+                    query.State = hybrid.State;
+                    query.To = hybrid.Goal;
                     var pos = hybrid.transform.position;
                     pos.y = 0;
                     translation.Position = pos;

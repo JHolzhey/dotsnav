@@ -24,6 +24,37 @@ namespace DotsNav.Drawing
     //     }
     // }
 
+    struct Circles
+    {
+        Lines _lines;
+        internal Circles(int count)
+        {
+            _lines = new Lines(count);
+        }
+
+        internal void Draw(float3 center, float radius, Color color, int res = 24)
+        {
+            var q = Quaternion.AngleAxis(360f / res, Vector3.up);
+            float3 currentArm = new Vector3(0, 0, radius);
+
+            for (var i = 0; i < res; i++)
+            {
+                float3 nextArm = q * currentArm;
+                _lines.Draw(center + currentArm, center + nextArm, color);
+                currentArm = nextArm;
+            }
+        }
+    }
+
+    struct Circle
+    {
+        internal static void Draw(float3 center, float radius, Color color, int res = 24)
+        {
+            new Circles(res).Draw(center, radius, color, res);
+        }
+    }
+
+
     struct Arrows
     {
         Lines _lines;

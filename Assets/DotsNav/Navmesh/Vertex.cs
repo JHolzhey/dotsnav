@@ -12,6 +12,7 @@ namespace DotsNav.Navmesh
         [System.Flags]
         public enum Type : byte {
             None = 0,
+            OnTerrain = 1,
             Major = 1 << 4, // Casted to and from Edge.Major / Edge.Minor
             Minor = 1 << 5,
         }
@@ -22,19 +23,23 @@ namespace DotsNav.Navmesh
         public float2 Point { get; internal set; }
         public float Height { get; internal set; }
         public readonly float3 Point3D => Point.XOY(Height);
+        
+        // public float Height { get; internal set; }
 
-        Edge* MajorEdge;
-        Edge* MinorEdge;
-        public Type VertexType { // TODO: Make this branchless somehow
+        Edge* EdgeMajor;
+        Edge* EdgeMinor;
+        public Type VertexType {
             get {
                 Type thisType = Type.None;
-                if (MajorEdge != null) { thisType |= Type.Major; }
-                if (MinorEdge != null) { thisType |= Type.Minor; }
+                thisType.SetFlagsB(Type.Major, EdgeMajor != null);
+                thisType.SetFlagsB(Type.Minor, EdgeMinor != null);
+                // if (EdgeMajor != null) { thisType |= Type.Major; }
+                // if (EdgeMinor != null) { thisType |= Type.Minor; }
                 return thisType;
             }
         }
 
-        internal Edge* GetEdge(bool isMajor) => isMajor ? MajorEdge : MinorEdge;
+        internal Edge* GetEdge(bool isMajor) => isMajor ? EdgeMajor : EdgeMinor;
         internal int SeqPos;
         internal int Mark; // Used when potentially removing Constraint Vertices (depth-first search), to mark already visited Vertices // TODO: I don't think this is true
         internal int PointConstraints;
@@ -69,17 +74,17 @@ namespace DotsNav.Navmesh
         internal void RemoveEdge(Edge* e, bool isMajor) {
             Edge.VerifyEdge(e, isMajor);
             if (isMajor) {
-                MajorEdge = e->ONext == e ? null : e->ONext;
+                EdgeMajor = e->ONext == e ? null : e->ONext;
             } else {
-                MinorEdge = e->ONext == e ? null : e->ONext;
+                EdgeMinor = e->ONext == e ? null : e->ONext;
             }
         }
         internal void AddEdge(Edge* e, bool isMajor) {
             Edge.VerifyEdgeType(e->EdgeType, isMajor);
             if (isMajor) {
-                MajorEdge = e;
+                EdgeMajor = e;
             } else {
-                MinorEdge = e;
+                EdgeMinor = e;
             }
         }
 

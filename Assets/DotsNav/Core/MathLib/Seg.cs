@@ -53,7 +53,7 @@ public struct Seg : IComponentData, IGeometry
     public float4x4 CalcLocalMatrix() => MathLib.CalcLocalMatrix(Direction, start);
 
 
-    public float3 PointGivenXZ(float2 xz) { // TODO: Make Line struct and make this a method
+    public float3 PointGivenXZ(float2 xz) { // TODO: Make Line struct and make this a method. Also should improve speed of this method
         float3 direction = Direction;
         float3 pointOnLine = start; // Value taken if IsVertical
         bool success = true;

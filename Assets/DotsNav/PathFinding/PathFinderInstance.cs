@@ -1,5 +1,6 @@
 using DotsNav.Collections;
 using DotsNav.PathFinding.Data;
+using DotsNav.Data;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -30,13 +31,13 @@ namespace DotsNav.PathFinding
             _path.Dispose();
         }
 
-        public unsafe PathQueryState FindPath(float2 from, float2 to, float radius, DynamicBuffer<PathSegmentElement> segments, DynamicBuffer<TriangleElement> triangleIds, Navmesh.Navmesh* navmesh, out int cost)
+        public unsafe PathQueryState FindPath(float2 from, float2 to, AgentComponent agent, Navmesh.Navmesh* navmesh, DynamicBuffer<PathSegmentElement> segments, DynamicBuffer<TriangleElement> triangleIds, out int cost)
         {
             triangleIds.Clear();
-            var result = _astar.Search(from, to, navmesh, _channel, radius, triangleIds, out cost);
+            var result = _astar.Search(from, to, agent, navmesh, _channel, triangleIds, out cost);
             if (result == PathQueryState.PathFound)
             {
-                _funnel.GetPath(_channel, from, to, radius, _path);
+                _funnel.GetPath(_channel, from, to, agent.Radius.max, _path);
                 triangleIds.Reinterpret<int>().AsNativeArray().Sort();
             }
 
@@ -48,6 +49,7 @@ namespace DotsNav.PathFinding
                 segments.Add(new PathSegmentElement
                 {
                     Corner = i > 0 ? _path.FromFront(i - 1).Vertex : w.From,
+                    Radius = w.Radius,
                     From = w.From,
                     To = w.To
                 });

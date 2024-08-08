@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using Unity.Mathematics;
 
 namespace DotsNav
@@ -33,6 +34,7 @@ namespace DotsNav
             var sNumer = s10.x * s02.y - s10.y * s02.x;
             if (sNumer < 0 == denomPositive)
             {
+                // UnityEngine.Debug.Log("Left"); // TODO: For ChannelSearch C(), we could return o or d based on these ifs
                 result = default;
                 return false;
             }
@@ -40,12 +42,14 @@ namespace DotsNav
             var tNumer = s32.x * s02.y - s32.y * s02.x;
             if (tNumer < 0 == denomPositive)
             {
+                // UnityEngine.Debug.Log("Right");
                 result = default;
                 return false;
             }
 
             if (sNumer > denom == denomPositive || tNumer > denom == denomPositive)
             {
+                // UnityEngine.Debug.Log("Off");
                 result = default;
                 return false;
             }
@@ -275,6 +279,52 @@ namespace DotsNav
         public static float2 PerpCw(float2 vector2) => new(vector2.y, -vector2.x);
         public static float2 PerpCcw(float2 vector2) => new(-vector2.y, vector2.x);
 
+
+        // All Tangent formulas from: https://math.stackexchange.com/questions/719758/inner-tangent-between-two-circles-formula
+        public static void GetOuterTangentRight(float2 c0, float r, float2 c1, float R, out float2 from, out float2 to)
+        {
+            float hypotenuse = math.distance(c0, c1);
+            float shortEdge = r - R;
+            float theta = math.atan2(c1.y - c0.y, c1.x - c0.x) - math.acos(shortEdge/hypotenuse);
+
+            from = new float2(c0.x + r * math.cos(theta), c0.y + r * math.sin(theta));
+            to = new float2(c1.x + R * math.cos(theta), c1.y + R * math.sin(theta));
+        }
+
+        public static void GetOuterTangentLeft(float2 c0, float r, float2 c1, float R, out float2 from, out float2 to)
+        {
+            float hypotenuse = math.distance(c0, c1);
+            float shortEdge = r - R;
+            float theta = math.atan2(c1.y - c0.y, c1.x - c0.x) + math.acos(shortEdge/hypotenuse);
+
+            from = new float2(c0.x + r * math.cos(theta), c0.y + r * math.sin(theta));
+            to = new float2(c1.x + R * math.cos(theta), c1.y + R * math.sin(theta));
+        }
+
+        public static void GetInnerTangentRight(float2 c0, float r, float2 c1, float R, out float2 from, out float2 to)
+        {
+            float hypotenuse = math.distance(c0, c1);
+            float shortEdge = r + R;
+            float theta = math.atan2(c1.y - c0.y, c1.x - c0.x) + math.asin(shortEdge/hypotenuse) - math.PI/2f;
+
+            from = new float2(c0.x + r * math.cos(theta), c0.y + r * math.sin(theta));
+            to = new float2(c1.x + R * math.cos(theta + math.PI), c1.y + R * math.sin(theta + math.PI));
+        }
+
+        public static void GetInnerTangentLeft(float2 c0, float r, float2 c1, float R, out float2 from, out float2 to)
+        {
+            float hypotenuse = math.distance(c0, c1);
+            float shortEdge = r + R;
+            float theta = math.atan2(c1.y - c0.y, c1.x - c0.x) - math.asin(shortEdge/hypotenuse) + math.PI/2f;
+
+            from = new float2(c0.x + r * math.cos(theta), c0.y + r * math.sin(theta));
+            to = new float2(c1.x + R * math.cos(theta + math.PI), c1.y + R * math.sin(theta + math.PI));
+        }
+
+
+
+
+        // Old, only works for equivalent radii:
         public static void GetOuterTangentRight(float2 c0, float2 c1, float R, out float2 from, out float2 to)
         {
             var theta = math.atan2(c1.y - c0.y, c1.x - c0.x);

@@ -18,15 +18,15 @@ namespace DotsNav.PathFinding.Systems
             Entities
                 .WithBurst()
                 .WithReadOnly(ltwLookup)
-                .ForEach((RadiusComponent radius, TransformAspect translation, NavmeshAgentComponent navmesh, DynamicBuffer<PathSegmentElement> path, ref PathQueryComponent agent, ref DirectionComponent data) =>
+                .ForEach((AgentComponent agent, TransformAspect translation, NavmeshAgentComponent navmesh, DynamicBuffer<PathSegmentElement> path, ref PathQueryComponent query, ref DirectionComponent data) =>
                 {
-                    if (agent.State != PathQueryState.PathFound)
+                    if (query.State != PathQueryState.PathFound)
                         return;
 
-                    if (data.QueryVersion < agent.Version)
+                    if (data.QueryVersion < query.Version)
                     {
                         data.SegmentIndex = 0;
-                        data.QueryVersion = agent.Version;
+                        data.QueryVersion = query.Version;
                     }
 
                     var inv = math.inverse(ltwLookup[navmesh.Navmesh].Value);
@@ -43,7 +43,7 @@ namespace DotsNav.PathFinding.Systems
                     var closest = Math.ClosestPointOnLineSegment(p, segment.From, segment.To);
                     data.DistanceFromPathSquared = math.distancesq(p, closest);
 
-                    while (data.SegmentIndex < path.Length - 1)
+                    while (data.SegmentIndex < path.Length - 1) // TODO: What does this do exactly?
                     {
                         var segment1 = path[data.SegmentIndex + 1];
                         var point1 = Math.ClosestPointOnLineSegment(p, segment1.From, segment1.To);

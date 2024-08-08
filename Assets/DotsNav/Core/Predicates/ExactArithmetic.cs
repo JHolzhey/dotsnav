@@ -56,9 +56,6 @@
 //-------------------------------------------------------------------------
 #endregion
 
-using System.Collections.Generic;
-using UnityEditor.Experimental.GraphView;
-
 namespace DotsNav
 {
     /// <summary>

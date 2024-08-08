@@ -48,6 +48,7 @@ public unsafe struct Triangulator {
         AddTriangle(p0, p3, p1, t0, -1, -1, -1);
         Flush();
 
+        // triangulation is done when the current greatest error in the queue is less than or equal to maxError
         while (!done(maxError, maxTriangles, maxPoints)) {
             Step();
         }

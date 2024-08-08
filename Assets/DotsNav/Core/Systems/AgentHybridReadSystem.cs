@@ -11,9 +11,10 @@ namespace DotsNav.Systems
         {
             Entities
                 .WithoutBurst()
-                .ForEach((DotsNavAgent monoAgent, ref RadiusComponent radius) =>
+                .ForEach((DotsNavAgent monoAgent, ref AgentComponent radius) =>
                 {
-                    radius.Value = monoAgent.Radius;
+                    radius.Radius.min = monoAgent.MinRadius;
+                    radius.Radius.max = monoAgent.MaxRadius;
                 })
                 .Run();
         }

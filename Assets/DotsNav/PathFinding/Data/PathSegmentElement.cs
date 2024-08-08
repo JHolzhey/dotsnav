@@ -19,6 +19,11 @@ namespace DotsNav.PathFinding.Data
         public float2 Corner;
 
         /// <summary>
+        /// The radius of the circle around Corner
+        /// </summary>
+        public float Radius;
+
+        /// <summary>
         /// The starting point of the path segment's line segment
         /// </summary>
         public float2 From;
